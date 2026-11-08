@@ -1,0 +1,24 @@
+name: Keep schedule alive
+
+# GitHub pauses scheduled workflows after 60 days without commits on the main branch.
+# This tiny weekly commit prevents that, so ClipRush never silently stops.
+on:
+  schedule:
+    - cron: "17 3 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  keepalive:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          date -u +"%Y-%m-%dT%H:%M:%SZ" > .keepalive
+          git config user.name "cliprush-bot"
+          git config user.email "cliprush-bot@users.noreply.github.com"
+          git add .keepalive
+          git commit -m "keepalive" || exit 0
+          git push

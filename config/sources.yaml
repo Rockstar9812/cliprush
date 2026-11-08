@@ -1,0 +1,155 @@
+# What ClipRush watches. Edit freely; the Health tab shows any source it could not find.
+# `handle` is the YouTube @handle. If a handle is wrong, ClipRush searches YouTube by
+# `name` and checks the channel title, so a wrong guess heals itself (see Health tab).
+
+podcasts:
+  # --- Celebrity & hip-hop interviews ---
+  - {name: "Club Shay Shay", handle: "ClubShayShay", tier: 1, cat: celebrity}
+  - {name: "Nightcap", handle: "NightcapShow", tier: 1, cat: celebrity}
+  - {name: "The Breakfast Club", handle: "BreakfastClubPower1051", tier: 1, cat: celebrity}
+  - {name: "Drink Champs", handle: "DrinkChamps", tier: 1, cat: celebrity}
+  - {name: "The Joe Budden Podcast", handle: "JoeBuddenPodcast", tier: 1, cat: celebrity}
+  - {name: "Million Dollaz Worth of Game", handle: "MillionDollazWorthOfGame", tier: 1, cat: celebrity}
+  - {name: "Caresha Please", handle: "CareshaPlease", tier: 2, cat: celebrity}
+  - {name: "No Jumper", handle: "NoJumper", tier: 1, cat: celebrity}
+  - {name: "Big Facts", handle: "BigFactsPod", tier: 2, cat: celebrity}
+  - {name: "The Pivot Podcast", handle: "ThePivotPodcast", tier: 1, cat: athlete}
+  # --- Comedy & big personalities ---
+  - {name: "The Joe Rogan Experience", handle: "joerogan", tier: 1, cat: comedy}
+  - {name: "This Past Weekend w/ Theo Von", handle: "TheoVon", tier: 1, cat: comedy}
+  - {name: "Flagrant", handle: "flagrant", tier: 1, cat: comedy}
+  - {name: "Kill Tony", handle: "KillTony", tier: 2, cat: comedy}
+  - {name: "Bad Friends", handle: "BadFriends", tier: 2, cat: comedy}
+  - {name: "H3 Podcast", handle: "h3podcast", tier: 2, cat: comedy}
+  - {name: "Impaulsive", handle: "impaulsive", tier: 1, cat: comedy}
+  - {name: "BFFs", handle: "BFFsPod", tier: 1, cat: comedy}
+  - {name: "Full Send Podcast", handle: "FULLSENDPODCAST", tier: 1, cat: comedy}
+  # --- Women-led & relationship talk ---
+  - {name: "Call Her Daddy", handle: "CallHerDaddy", tier: 1, cat: relationships}
+  - {name: "Unsubscribe Podcast", handle: "UnsubscribePodcast", tier: 1, cat: relationships}
+  - {name: "Whatever Podcast", handle: "whatever", tier: 1, cat: relationships}
+  - {name: "Fresh & Fit Podcast", handle: "FreshandFitPodcast", tier: 1, cat: relationships}
+  - {name: "Saving Grace", handle: "GKBarry", tier: 2, cat: relationships}
+  # --- Athletes & sports personalities ---
+  - {name: "New Heights", handle: "newheightshow", tier: 1, cat: athlete}
+  - {name: "The Pat McAfee Show", handle: "ThePatMcAfeeShow", tier: 1, cat: athlete}
+  - {name: "I Am Athlete", handle: "IAMATHLETEOFFICIAL", tier: 2, cat: athlete}
+  - {name: "Bussin' With The Boys", handle: "BussinWithTheBoys", tier: 2, cat: athlete}
+  - {name: "4th&1 with Cam Newton", handle: "CamNewton", tier: 2, cat: athlete}
+  # --- NBA / WNBA player podcasts ---
+  - {name: "Curious Mike (Michael Porter Jr.)", handle: "CuriousMike", tier: 1, cat: nba}
+  - {name: "Club 520 Podcast", handle: "Club520Podcast", tier: 1, cat: nba}
+  - {name: "All The Smoke", handle: "AllTheSmoke", tier: 1, cat: nba}
+  - {name: "Gil's Arena", handle: "GilsArenaShow", tier: 1, cat: nba}
+  - {name: "Podcast P with Paul George", handle: "PodcastPShow", tier: 2, cat: nba}
+  - {name: "The Why with Dwyane Wade", handle: "DwyaneWade", tier: 2, cat: nba}
+  - {name: "Mind the Game", handle: "MindTheGamePod", tier: 2, cat: nba}
+  - {name: "Unapologetically Angel", handle: "AngelReese", tier: 2, cat: nba}
+  - {name: "Game Recognize Game", handle: "GameRecognizeGame", tier: 3, cat: nba}
+  # --- Adult-star podcasts (talk/interview moments only) ---
+  - {name: "Private Talk With Alexis Texas", handle: "AlexisTexas", tier: 2, cat: adult}
+  - {name: "The Lisa Ann Experience", handle: "TheLisaAnnExperience", tier: 2, cat: adult}
+  - {name: "Holly Randall Unfiltered", handle: "HollyRandall", tier: 3, cat: adult}
+  - {name: "Adult Empire Podcast", handle: "AdultEmpire", tier: 3, cat: adult}
+
+# People are searched across ALL of YouTube (any channel), so a viral guest appearance
+# on a podcast that is not listed above is still caught. tier 1 = biggest reach.
+people:
+  # Music & hip-hop
+  - {name: "Drake", tier: 1}
+  - {name: "Kanye West", tier: 1, aka: ["Ye"]}
+  - {name: "Diddy", tier: 1, aka: ["Sean Combs", "P Diddy", "Puff Daddy"]}
+  - {name: "6ix9ine", tier: 1, aka: ["Tekashi 6ix9ine", "Tekashi"]}
+  - {name: "Cardi B", tier: 1}
+  - {name: "Nicki Minaj", tier: 1}
+  - {name: "Kendrick Lamar", tier: 1}
+  - {name: "Lil Wayne", tier: 1}
+  - {name: "50 Cent", tier: 1}
+  - {name: "Katt Williams", tier: 1}
+  - {name: "Megan Thee Stallion", tier: 1}
+  - {name: "Chris Brown", tier: 1}
+  - {name: "Lil Baby", tier: 2}
+  - {name: "DJ Akademiks", tier: 2, aka: ["Akademiks"]}
+  - {name: "Charleston White", tier: 2}
+  - {name: "Boosie", tier: 2, aka: ["Boosie Badazz"]}
+  - {name: "Soulja Boy", tier: 2}
+  - {name: "Rick Ross", tier: 2}
+  - {name: "Birdman", tier: 2}
+  - {name: "Jay-Z", tier: 1, aka: ["Jay Z"]}
+  - {name: "Beyonce", tier: 1, aka: ["Beyoncé"]}
+  - {name: "Taylor Swift", tier: 1}
+  - {name: "Rihanna", tier: 1}
+  # Comedy, internet, streamers
+  - {name: "Kevin Hart", tier: 1}
+  - {name: "Andrew Schulz", tier: 2}
+  - {name: "Andrew Tate", tier: 1}
+  - {name: "Adin Ross", tier: 1}
+  - {name: "Kai Cenat", tier: 1}
+  - {name: "IShowSpeed", tier: 1, aka: ["Speed"]}
+  - {name: "Sneako", tier: 2}
+  - {name: "N3on", tier: 2}
+  - {name: "Lacy", tier: 2}
+  - {name: "StableRonaldo", tier: 2}
+  - {name: "Jasontheween", tier: 2}
+  - {name: "Marlon", tier: 3}
+  - {name: "Pokimane", tier: 2}
+  - {name: "Valkyrae", tier: 2}
+  - {name: "ExtraEmily", tier: 3}
+  - {name: "Logan Paul", tier: 1}
+  - {name: "Jake Paul", tier: 1}
+  - {name: "MrBeast", tier: 1}
+  - {name: "Elon Musk", tier: 1}
+  # Athletes
+  - {name: "LeBron James", tier: 1, aka: ["LeBron", "King James"]}
+  - {name: "Michael Porter Jr", tier: 1, aka: ["MPJ"]}
+  - {name: "Shannon Sharpe", tier: 1}
+  - {name: "Kevin Durant", tier: 1, aka: ["KD"]}
+  - {name: "Stephen A Smith", tier: 1}
+  - {name: "Ja Morant", tier: 1}
+  - {name: "Cam Newton", tier: 2}
+  - {name: "Floyd Mayweather", tier: 1}
+  - {name: "Ryan Garcia", tier: 1}
+  - {name: "Conor McGregor", tier: 1}
+  - {name: "Deion Sanders", tier: 1, aka: ["Coach Prime"]}
+  - {name: "Shaq", tier: 1, aka: ["Shaquille O'Neal"]}
+  - {name: "Gilbert Arenas", tier: 2}
+  - {name: "Matt Barnes", tier: 2}
+  - {name: "Angel Reese", tier: 1}
+  - {name: "Travis Kelce", tier: 1}
+  - {name: "Cristiano Ronaldo", tier: 1}
+  - {name: "Michael Jordan", tier: 1, aka: ["MJ"]}
+  - {name: "Kobe Bryant", tier: 1, aka: ["Kobe"]}
+  - {name: "Steve Harvey", tier: 1}
+  - {name: "Tyler Perry", tier: 1}
+  - {name: "Will Smith", tier: 1}
+  - {name: "Oprah", tier: 1}
+  # Relationships / creators / adult industry (interviews)
+  - {name: "Brittany Renner", tier: 2}
+  - {name: "Bonnie Blue", tier: 1}
+  - {name: "Lily Phillips", tier: 1}
+  - {name: "Sophie Rain", tier: 1}
+  - {name: "Alexis Texas", tier: 2}
+  - {name: "Lisa Ann", tier: 2}
+  - {name: "Mia Khalifa", tier: 1}
+  - {name: "Riley Reid", tier: 2}
+  - {name: "Johnny Sins", tier: 2}
+  - {name: "Blac Chyna", tier: 2}
+  - {name: "Amber Rose", tier: 2}
+  - {name: "Alex Cooper", tier: 2}
+  - {name: "Kim Kardashian", tier: 1}
+  - {name: "Kylie Jenner", tier: 1}
+
+# Clip accounts the X study learns from. No X login is ever used.
+# Add the rest of your 26 reference accounts here (without @).
+x_accounts:
+  - scubaryan_
+  - killakreww
+  - fearedbuck
+  - itskingslime
+  - ragnaroknation      # your own account: tracks how your posts perform (read-only, no login)
+
+# Search terms the X study uses to spot what is trending (Apify backup only).
+x_search_terms:
+  - "podcast clip"
+  - "said on podcast"
+  - "full interview"

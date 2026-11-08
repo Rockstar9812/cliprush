@@ -1,0 +1,54 @@
+# ClipRush settings. Times are India time (IST) unless the name says UTC.
+
+posting:
+  # Your posting windows. The app prepares each batch 30 minutes before.
+  batches:
+    - name: Morning
+      time: "07:00"        # 7 AM IST = ~8:30 PM New York (US prime time)
+      clips: 5
+    - name: Night
+      time: "21:00"        # 9 PM IST. Your data: 17:30-20:30 IST (12-15 UTC) is a dead window.
+      clips: 5
+  dead_window_ist: ["17:30", "20:30"]
+
+discovery:
+  max_episode_age_hours: 48     # ignore uploads older than this
+  min_episode_minutes: 12       # skip trailers / shorts
+  max_new_episodes_per_run: 6   # keeps each cloud run fast
+  people_search_every_minutes: 60
+  people_per_search_round: 12   # rotates through the watchlist
+
+clips:
+  target_seconds: [8, 22]       # your data: sub-15s clips perform best; allows a little context
+  hard_max_seconds: 35
+  min_gap_seconds: 75           # picked moments must be this far apart in an episode
+  per_episode: 5
+  min_score: 45                 # 0-100; below this a moment is not shown
+
+ai:
+  # All optional. With no keys the app runs on rules only.
+  order: [groq, gemini]
+  groq_model: "openai/gpt-oss-120b"
+  groq_fallback_model: "llama-3.1-8b-instant"
+  gemini_model: "gemini-flash-latest"
+  daily_token_budget: 180000    # stays under Groq free 200k/day
+  candidates_sent_per_episode: 8
+
+x_study:
+  every_hours: 3
+  recheck_after_hours: [1, 6, 24, 72]
+  keep_days: 120
+  apify:
+    enabled_if_token: true
+    actor: "xquik/x-tweet-scraper"   # any Apify X scraper; fields are mapped defensively
+    monthly_usd_cap: 4.50            # stays under Apify's $5 free monthly credit
+    usd_per_1000: 0.15
+    search_terms_per_round: 3
+
+laptop:
+  clips_folder: "C:/Users/Sandeep/ClipRush"
+  min_score_to_download: 55
+  max_downloads_per_run: 12
+  video_height: 1080
+  burn_captions: true
+  hook_seconds: 3

@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+local_data/
+docs/local/
+laptop/cliprush.env
+laptop/config_cache/
+laptop/last_run.log

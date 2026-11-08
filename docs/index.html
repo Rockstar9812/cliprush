@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>ClipRush</title>
+  <meta name="theme-color" content="#0b0d10" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="ClipRush" />
+  <meta name="robots" content="noindex, nofollow" />
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="icon" href="icon.svg" type="image/svg+xml" />
+  <link rel="apple-touch-icon" href="icon-180.png" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div id="lock" class="lock hidden">
+    <div class="lock-card">
+      <div class="brand big"><span class="dot"></span>ClipRush</div>
+      <p class="muted">Enter your ClipRush password to unlock today's clips.</p>
+      <form id="lockForm">
+        <input id="pw" type="password" autocomplete="current-password" placeholder="Password" required />
+        <label class="check"><input id="remember" type="checkbox" checked /> Remember on this device</label>
+        <button class="btn primary wide" type="submit">Unlock</button>
+        <p id="lockErr" class="err"></p>
+      </form>
+      <details class="small muted">
+        <summary>Repository</summary>
+        <input id="repoInput" placeholder="yourname/cliprush" />
+      </details>
+    </div>
+  </div>
+
+  <header class="top">
+    <div class="brand"><span class="dot"></span>ClipRush</div>
+    <button id="statusPill" class="pill" title="Health">…</button>
+    <button id="refreshBtn" class="icon-btn" aria-label="Refresh">⟳</button>
+  </header>
+
+  <main id="view" class="view"></main>
+
+  <nav class="tabs" id="tabs">
+    <button data-tab="batches" class="active"><span>▦</span>Batches</button>
+    <button data-tab="clips"><span>✂</span>All clips</button>
+    <button data-tab="episodes"><span>▶</span>Episodes</button>
+    <button data-tab="insights"><span>↗</span>Insights</button>
+    <button data-tab="health"><span>♥</span>Health</button>
+  </nav>
+
+  <div id="modal" class="modal hidden" role="dialog" aria-modal="true">
+    <div class="modal-card">
+      <button class="icon-btn close" id="modalClose" aria-label="Close">✕</button>
+      <div id="modalBody"></div>
+    </div>
+  </div>
+  <div id="toast" class="toast hidden"></div>
+  <script type="module" src="app.js"></script>
+</body>
+</html>

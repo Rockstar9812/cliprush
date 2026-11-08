@@ -1,0 +1,5 @@
+yt-dlp>=2025.10.0
+youtube-transcript-api>=1.2.0
+cryptography>=42
+PyYAML>=6
+requests>=2.31
