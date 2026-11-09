@@ -113,7 +113,7 @@ class Mirrors:
             if tries >= max_tries or time.time() - t0 > budget_s:
                 break
             tries += 1
-            res = self._invidious(base, video_id)
+            res = self._fetch_invidious(base, video_id)
             if res:
                 self._ok(base)
                 return res
@@ -122,7 +122,7 @@ class Mirrors:
             if tries >= max_tries + 3 or time.time() - t0 > budget_s:
                 break
             tries += 1
-            res = self._piped(base, video_id)
+            res = self._fetch_piped(base, video_id)
             if res:
                 self._ok(base)
                 return res
@@ -130,7 +130,7 @@ class Mirrors:
         log.info("All free mirrors failed for %s", video_id)
         return None
 
-    def _invidious(self, base: str, vid: str) -> Optional[tuple[dict, list[dict]]]:
+    def _fetch_invidious(self, base: str, vid: str) -> Optional[tuple[dict, list[dict]]]:
         r = self.http.get(f"{base}/api/v1/videos/{vid}", tries=1, timeout=15)
         if r is None or r.status_code != 200:
             return None
@@ -166,7 +166,7 @@ class Mirrors:
                 "via": base}
         return info, segs
 
-    def _piped(self, base: str, vid: str) -> Optional[tuple[dict, list[dict]]]:
+    def _fetch_piped(self, base: str, vid: str) -> Optional[tuple[dict, list[dict]]]:
         r = self.http.get(f"{base}/streams/{vid}", tries=1, timeout=15)
         if r is None or r.status_code != 200:
             return None
