@@ -28,6 +28,9 @@ class Mirrors:
         self.state = state  # persisted: {"good": {url: last_ok_iso}, "bad": {url: count}}
         self._inv: Optional[list[str]] = None
         self._piped: Optional[list[str]] = None
+        self.last_reason = ""          # "nocaps" = mirrors can see the video but it has no English captions yet
+        self.last_info: Optional[dict] = None
+        self._nocaps = 0
 
     # ------------------------------------------------------------ instance lists
     def invidious(self) -> list[str]:
@@ -109,6 +112,7 @@ class Mirrors:
         """Returns (info, transcript_segments) like yt-dlp would, or None if every mirror failed."""
         t0 = time.time()
         tries = 0
+        self.last_reason, self.last_info, self._nocaps = "failed", None, 0
         for base in self.invidious():
             if tries >= max_tries or time.time() - t0 > budget_s:
                 break
@@ -117,6 +121,8 @@ class Mirrors:
             if res:
                 self._ok(base)
                 return res
+            if self._nocaps >= 2:
+                break
             self._fail(base)
         for base in self.piped():
             if tries >= max_tries + 3 or time.time() - t0 > budget_s:
@@ -126,8 +132,14 @@ class Mirrors:
             if res:
                 self._ok(base)
                 return res
+            if self._nocaps >= 2:
+                break
             self._fail(base)
-        log.info("All free mirrors failed for %s", video_id)
+        if self._nocaps >= 2:
+            self.last_reason = "nocaps"
+            log.info("%s has no English captions yet (mirrors agree) - will retry later", video_id)
+        else:
+            log.info("All free mirrors failed for %s", video_id)
         return None
 
     def _fetch_invidious(self, base: str, vid: str) -> Optional[tuple[dict, list[dict]]]:
@@ -142,6 +154,10 @@ class Mirrors:
             return None
         caps = v.get("captions") or []
         cap = _pick_caption(caps, lambda c: (c.get("language_code") or c.get("languageCode") or ""), lambda c: c.get("label", ""))
+        if not cap and v.get("title"):
+            self._nocaps += 1
+            self.last_info = {"id": vid, "title": v.get("title", ""), "duration": v.get("lengthSeconds") or 0,
+                              "timestamp": v.get("published"), "view_count": v.get("viewCount") or 0}
         segs: list[dict] = []
         if cap:
             url = cap["url"] if cap["url"].startswith("http") else base + cap["url"]
@@ -178,6 +194,10 @@ class Mirrors:
             return None
         subs = v.get("subtitles") or []
         cap = _pick_caption(subs, lambda c: c.get("code") or "", lambda c: c.get("name") or "")
+        if not cap and v.get("title"):
+            self._nocaps += 1
+            self.last_info = self.last_info or {"id": vid, "title": v.get("title", ""), "duration": v.get("duration") or 0,
+                                                "view_count": v.get("views") or 0}
         segs: list[dict] = []
         if cap and cap.get("url"):
             cr = self.http.get(cap["url"], tries=1, timeout=15)

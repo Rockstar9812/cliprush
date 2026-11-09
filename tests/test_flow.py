@@ -143,7 +143,7 @@ def test_cycle_marks_blocked_for_laptop(tmp_path, monkeypatch):
     c = pipeline.Cycle(mode="cloud", store=store, password="test-password-123")
     c.cfg.x_accounts = []
     h = c.run(("watch",))
-    assert h["youtube_blocked"] and h["pending_for_laptop"] == 1
+    assert h["pending_for_laptop"] == 1 and h["direct_blocked"]
     brain = decrypt_obj((tmp_path / BRAIN_FILE).read_bytes(), "test-password-123")
     assert brain["episodes"]["vid00000001"]["stage"] == "needs_local"
 
@@ -276,3 +276,63 @@ def test_mirrors_fall_through_to_piped():
     assert info["via"] == "https://pipe.example" and len(segs) == 2 and info["comments"][0]["likes"] == 9
     assert info["chapters"][1]["end_time"] == 1e12 and info["chapters"][0]["end_time"] == 600
     assert "https://pipe.example" in m.state["good"]
+
+
+def test_one_bad_video_does_not_stop_the_others(tmp_path, monkeypatch):
+    from brain import alt, pipeline, youtube as yt
+    from brain.store import APP_FILE, LocalStore
+    vids = ["badvideo001", "goodvideo01", "goodvideo02"]
+
+    def rss(http, cid):
+        out = []
+        for i, v in enumerate(vids):
+            out += [x for x in yt.parse_rss(fakes.rss(vid=v, hours_ago=1 + i, ep_title=f"Katt Williams part {i} | Club Shay Shay"))
+                    if x["video_id"] == v]
+        return out
+    monkeypatch.setattr(yt, "resolve_channel", lambda http, name, *a, **k: (
+        {"channel_id": "UCabcdefghijklmnopqrstuv", "title": name, "method": "t"} if name == "Club Shay Shay" else None))
+    monkeypatch.setattr(yt, "fetch_rss", rss)
+    monkeypatch.setattr(yt, "search", lambda *a, **k: [])
+
+    def blocked(*a, **k):
+        raise yt.Blocked("Sign in to confirm you're not a bot")
+    monkeypatch.setattr(yt, "video_info", blocked)
+
+    def mirror(self, vid, **k):
+        self.last_reason = "failed"
+        if vid == "badvideo001":
+            return None
+        return dict(fakes.info(vid), via="https://m.example"), fakes.transcript()
+    monkeypatch.setattr(alt.Mirrors, "video", mirror)
+    monkeypatch.setattr(alt.Mirrors, "search_videos", lambda self, q, n=6: [])
+    monkeypatch.delenv("GROQ_API_KEY", raising=False)
+    c = pipeline.Cycle(mode="cloud", store=LocalStore(str(tmp_path)), password="test-password-123")
+    c.cfg.x_accounts = []
+    h = c.run(("watch",))
+    app = decrypt_obj((tmp_path / APP_FILE).read_bytes(), "test-password-123")
+    assert h["pending_for_laptop"] == 1 and not h["youtube_blocked"]
+    assert {cl["video_id"] for cl in app["clips"]} == {"goodvideo01", "goodvideo02"}
+
+
+def test_no_captions_yet_is_retried_not_sent_to_laptop(tmp_path, monkeypatch):
+    from brain import alt, pipeline, youtube as yt
+    from brain.store import BRAIN_FILE, LocalStore
+    monkeypatch.setattr(yt, "resolve_channel", lambda http, name, *a, **k: (
+        {"channel_id": "UCabcdefghijklmnopqrstuv", "title": name, "method": "t"} if name == "Club Shay Shay" else None))
+    monkeypatch.setattr(yt, "fetch_rss", lambda http, cid: yt.parse_rss(fakes.rss()))
+    monkeypatch.setattr(yt, "search", lambda *a, **k: [])
+
+    def blocked(*a, **k):
+        raise yt.Blocked("bot")
+    monkeypatch.setattr(yt, "video_info", blocked)
+
+    def nocaps(self, vid, **k):
+        self.last_reason, self.last_info = "nocaps", {"id": vid, "title": "x", "duration": 3600}
+        return None
+    monkeypatch.setattr(alt.Mirrors, "video", nocaps)
+    monkeypatch.setattr(alt.Mirrors, "search_videos", lambda self, q, n=6: [])
+    c = pipeline.Cycle(mode="cloud", store=LocalStore(str(tmp_path)), password="test-password-123")
+    c.cfg.x_accounts = []
+    c.run(("watch",))
+    brain = decrypt_obj((tmp_path / BRAIN_FILE).read_bytes(), "test-password-123")
+    assert brain["episodes"]["vid00000001"]["stage"] == "no_transcript"

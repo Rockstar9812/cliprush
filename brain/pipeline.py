@@ -239,18 +239,25 @@ class Cycle:
         todo.sort(key=lambda e: (not e.get("manual") or e.get("stage") == "done" and not e.get("_rescore"),
                                  e.get("stage") != "new", -self._hot(e)))
         limit = int(self.cfg.get("discovery.max_new_episodes_per_run", 6)) * (3 if self.mode != "cloud" else 1)
+        fails_in_a_row = 0
         for e in todo[:limit]:
             if self.time_left() < 90 or self.yt_blocked:
                 break
             try:
                 self.analyse(e)
+                fails_in_a_row = 0
             except yt.Blocked:
+                # one stubborn video goes to the laptop; only stop if several fail in a row
                 e["stage"] = "needs_local"
                 e["updated"] = iso(now_utc())
-                for rest in todo[todo.index(e) + 1:]:
-                    if rest.get("stage") == "new":
-                        rest["stage"], rest["updated"] = "needs_local", iso(now_utc())
-                raise
+                fails_in_a_row += 1
+                self.note(f"Could not read {e['show']} - {e['title'][:50]} here; laptop will finish it")
+                if fails_in_a_row >= 3:
+                    for rest in todo[todo.index(e) + 1:]:
+                        if rest.get("stage") == "new":
+                            rest["stage"], rest["updated"] = "needs_local", iso(now_utc())
+                    raise
+                continue
             except yt.Unreachable:
                 self.note("Network problem while reading an episode - will retry next run")
                 break
@@ -276,6 +283,8 @@ class Cycle:
                 segs = None
         if info is None or segs is None:
             alt = self.mirrors.video(vid)
+            if not alt and self.mirrors.last_reason == "nocaps":
+                return info or dict(self.mirrors.last_info or {"id": vid}, comments=[]), [], "none"
             if not alt:
                 raise yt.Blocked("YouTube and all free mirrors refused")
             ainfo, segs = alt
