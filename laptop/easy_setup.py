@@ -142,7 +142,11 @@ def phone_page(link: str) -> Path:
 <body style="font-family:Segoe UI,sans-serif;background:#0b0d10;color:#eee;text-align:center;padding:30px">
 <h1>Set up ClipRush on your iPhone</h1>
 <p>1. Open the iPhone <b>Camera</b> and point it at this code. Tap the link (it opens in Safari).</p>
-<div style="background:#fff;display:inline-block;padding:16px;border-radius:12px">{svg or '<p style="color:#000">QR unavailable - open the link below on the phone</p>'}</div>
+<div style="background:#fff;display:inline-block;padding:16px;border-radius:12px">{svg or '<p style="color:#000">QR code unavailable - use the Copy link button below</p>'}</div>
+<p style="margin-top:18px">No camera? Send yourself this link (e.g. WhatsApp to yourself / AirDrop) and open it on the iPhone:</p>
+<p><input id="l" value="{link}" readonly style="width:80%;padding:10px;border-radius:8px;border:0">
+<button onclick="navigator.clipboard.writeText(document.getElementById('l').value);this.textContent='Copied'"
+ style="padding:10px 16px;border-radius:8px;border:0;background:#ff4d2e;color:#fff;font-weight:700">Copy link</button></p>
 <p>2. In Safari: <b>Share &rarr; Add to Home Screen</b>. Done - no password typing.</p>
 <p style="color:#f88">Private: this code contains your password and GitHub token. Don't share or screenshot it.</p>
 </body>""", encoding="utf-8")
