@@ -174,9 +174,13 @@ def run_cutter(store=None, password: Optional[str] = None) -> list[str]:
     done = json.loads(idx_path.read_text()) if idx_path.exists() else {}
     min_score = float(cfg.get("laptop.min_score_to_download", 55))
     in_batch = {cid for b in app.get("batches", []) for cid in b.get("clips", [])}
+    from .util import hours_since
+    manual = lambda c: c.get("manual") and hours_since(c.get("found")) < 6  # noqa: E731
     todo = [c for c in app.get("clips", []) if c["id"] not in done and status.get(c["id"], {}).get("status") != "skipped"
-            and (c["score"] >= min_score or c["id"] in in_batch or status.get(c["id"], {}).get("status") == "approved")]
-    todo.sort(key=lambda c: (status.get(c["id"], {}).get("status") != "approved", c["id"] not in in_batch, -c["rank"]))
+            and (c["score"] >= min_score or c["id"] in in_batch or manual(c)
+                 or status.get(c["id"], {}).get("status") == "approved")]
+    todo.sort(key=lambda c: (not manual(c), status.get(c["id"], {}).get("status") != "approved",
+                             c["id"] not in in_batch, -c["rank"]))
     made = []
     for c in todo[: int(cfg.get("laptop.max_downloads_per_run", 12))]:
         try:

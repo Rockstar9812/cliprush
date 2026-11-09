@@ -19,6 +19,16 @@ Finds the most controversial, shocking and curious moments in new celebrity, ath
 
 ---
 
+## Fastest setup (laptop): `SETUP_EASY.bat`
+1. Save your notes file (password, Groq, Gemini, Apify and GitHub keys) as a `.txt` with "clip" and "password" in its name, e.g. `Cliprushpassword.txt`. Put it next to this folder.
+2. Double-click **SETUP_EASY.bat**. It:
+   - copies ClipRush to `C:\ClipRush` and installs Python, FFmpeg and the packages;
+   - reads your keys from the notes file and checks each one;
+   - opens the app already unlocked, plus a QR code for your iPhone;
+   - schedules the background runs, adds **ClipRush - Find clips now** to your Desktop, and makes your first clips.
+
+Never upload the notes file to GitHub. `.gitignore` blocks it in GitHub Desktop, but the web uploader would not.
+
 ## Setup (about 30 minutes, one time)
 
 ### 1. Put ClipRush on GitHub (free)
@@ -34,6 +44,7 @@ Finds the most controversial, shocking and curious moments in new celebrity, ath
 | `GROQ_API_KEY` | Recommended | console.groq.com → API Keys → Create (free, no card) |
 | `GEMINI_API_KEY` | Recommended (backup AI) | aistudio.google.com → Get API key (free, no card) |
 | `APIFY_TOKEN` | Optional | apify.com free plan → Settings → Integrations. Capped at $4.50 of the free $5/month. |
+| `YT_COOKIES` | Optional | Only if the free mirrors also fail. Use a **throwaway** Google account, never your main one. Log in to YouTube in an InPrivate window and export cookies.txt with a "Get cookies.txt" browser extension. Paste the file's text here. |
 
 Without any AI key, moments are still picked by the rule engine and captions come from templates. With a key, an AI also judges each moment and writes better captions.
 
@@ -58,7 +69,15 @@ Whenever the laptop is on, it:
 - makes 16:9 1080p MP4s with burned-in captions and a 3-second hook;
 - saves them with a caption `.txt` into `C:\Users\Sandeep\ClipRush\<date>\`. Clips you approved are cut first.
 
-### 7. Optional extras
+### 7. "Find clips now" button
+- **App:** tap **⚡ Find clips**. Paste a YouTube link to clip that exact video (any age, any channel), or leave it empty to check every podcast now. Progress shows at the top, and clips usually appear within 2–4 minutes.
+  The first time, the app asks for a GitHub fine-grained token with **Contents: Read and write** and **Actions: Read and write** on the `cliprush` repo.
+- **Laptop:** double-click **ClipRush - Find clips now** on your Desktop. Paste a link or press Enter. The laptop reads YouTube directly (never blocked), cuts the MP4s and opens the folder.
+
+### When YouTube blocks GitHub's cloud
+YouTube sometimes asks GitHub's servers to "confirm you're not a bot". ClipRush then automatically reads captions and comments through free public mirrors (Invidious and Piped). The Health tab shows which mirror it used. If the mirrors fail too, the episodes wait for your laptop, or you can add the optional `YT_COOKIES` secret.
+
+### 8. Optional extras
 - **Exact timing.** GitHub's 5-minute schedule can run 5–30 minutes late at busy times. A free job at cron-job.org can trigger it on time instead:
   - URL: `https://api.github.com/repos/<you>/cliprush/dispatches`, method POST, every 3 minutes
   - Headers: `Authorization: Bearer <fine-grained token with Contents: write>` and `Accept: application/vnd.github+json`
@@ -71,7 +90,7 @@ Whenever the laptop is on, it:
 
   After that, **Approve** in the app cuts that one clip on your phone. Test it once. If iOS blocks it, use the next option.
 - **Approved clips to Telegram.** Make a free bot with @BotFather, then put `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` in `cliprush.env`. The laptop sends each approved clip to your phone, where you save it to Photos.
-- **Sync approvals between phone and laptop.** App → Health → Settings → paste a fine-grained token.
+- **Sync approvals between phone and laptop.** Happens automatically once the app has your token.
 
 ---
 
@@ -113,3 +132,6 @@ Edit `config/sources.yaml` on GitHub (podcasts, people, X accounts) and `config/
 ```
 pip install -r requirements.txt pytest && python -m pytest -q tests
 ```
+
+## Updating ClipRush
+In GitHub Desktop: copy the new files over your `cliprush` folder (replace all), type "update", then **Commit to main** and **Push origin**. On the laptop, also unzip the new version over `C:\ClipRush`.

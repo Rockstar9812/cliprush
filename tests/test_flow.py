@@ -91,12 +91,14 @@ def test_full_cycle_offline(tmp_path, monkeypatch):
     from brain import pipeline, youtube as yt
     from brain.store import APP_FILE, LocalStore
 
-    monkeypatch.setattr(yt, "resolve_channel", lambda http, name, handle="": (
+    monkeypatch.setattr(yt, "resolve_channel", lambda http, name, handle="", titles=None, mirrors=None: (
         {"channel_id": "UCabcdefghijklmnopqrstuv", "title": name, "method": "test"} if name == "Club Shay Shay" else None))
     monkeypatch.setattr(yt, "fetch_rss", lambda http, cid: yt.parse_rss(fakes.rss()))
     monkeypatch.setattr(yt, "search", lambda q, n=10, by_date=True: [])
     monkeypatch.setattr(yt, "video_info", lambda vid, with_comments=True: fakes.info(vid))
     monkeypatch.setattr(yt, "transcript", lambda http, vid, info=None: (fakes.transcript(), "test"))
+    from brain import alt
+    monkeypatch.setattr(alt.Mirrors, "search_videos", lambda self, q, n=6: [])
     monkeypatch.delenv("GROQ_API_KEY", raising=False)
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     store = LocalStore(str(tmp_path))
@@ -127,7 +129,7 @@ def test_cycle_marks_blocked_for_laptop(tmp_path, monkeypatch):
     from brain import pipeline, youtube as yt
     from brain.store import BRAIN_FILE, LocalStore
 
-    monkeypatch.setattr(yt, "resolve_channel", lambda http, name, handle="": (
+    monkeypatch.setattr(yt, "resolve_channel", lambda http, name, handle="", titles=None, mirrors=None: (
         {"channel_id": "UCabcdefghijklmnopqrstuv", "title": name, "method": "t"} if name == "Club Shay Shay" else None))
     monkeypatch.setattr(yt, "fetch_rss", lambda http, cid: yt.parse_rss(fakes.rss()))
     monkeypatch.setattr(yt, "search", lambda q, n=10, by_date=True: [])
@@ -135,6 +137,8 @@ def test_cycle_marks_blocked_for_laptop(tmp_path, monkeypatch):
     def blocked(*a, **k):
         raise yt.Blocked("Sign in to confirm you're not a bot")
     monkeypatch.setattr(yt, "video_info", blocked)
+    from brain import alt
+    monkeypatch.setattr(alt.Mirrors, "video", lambda self, vid, **k: None)
     store = LocalStore(str(tmp_path))
     c = pipeline.Cycle(mode="cloud", store=store, password="test-password-123")
     c.cfg.x_accounts = []
@@ -193,3 +197,58 @@ def test_github_store_history_less_write(monkeypatch):
     tree = next(c for c in calls if c[1] == "/git/trees")
     assert {t["path"] for t in tree[2]["tree"]} == {"app.enc", "brain.enc"}
     assert patched == [("https://api.github.com/repos/me/r/git/refs/heads/data", {"sha": "c1", "force": True})]
+
+
+def test_mirror_fallback_and_manual_link(tmp_path, monkeypatch):
+    """YouTube blocks the cloud -> free mirror supplies captions+comments -> clips still made.
+    Also: a pasted link is clipped even though it is old and not from a watched channel."""
+    from brain import alt, pipeline, youtube as yt
+    from brain.store import APP_FILE, LocalStore
+
+    monkeypatch.setattr(yt, "resolve_channel", lambda *a, **k: None)
+    monkeypatch.setattr(yt, "search", lambda *a, **k: [])
+
+    def blocked(*a, **k):
+        raise yt.Blocked("Sign in to confirm you're not a bot")
+    monkeypatch.setattr(yt, "video_info", blocked)
+    old = fakes.info("dQw4w9WgXcQ", hours_ago=24 * 30)
+    old["via"] = "https://inv.example"
+    monkeypatch.setattr(alt.Mirrors, "video", lambda self, vid, **k: (dict(old, id=vid), fakes.transcript()))
+    monkeypatch.delenv("GROQ_API_KEY", raising=False)
+    store = LocalStore(str(tmp_path))
+    c = pipeline.Cycle(mode="cloud", store=store, password="test-password-123")
+    c.cfg.x_accounts = []
+    h = c.run(("watch",), video="https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=10s")
+    app = decrypt_obj((tmp_path / APP_FILE).read_bytes(), "test-password-123")
+    assert not h["youtube_blocked"] and h["direct_blocked"]
+    assert h["last_manual"]["video"] == "dQw4w9WgXcQ"
+    assert any(cl["video_id"] == "dQw4w9WgXcQ" for cl in app["clips"])
+    ep = next(e for e in app["episodes"] if e["id"] == "dQw4w9WgXcQ")
+    assert ep["stage"] == "done" and ep["guest"] == "Katt Williams"
+
+
+def test_vtt_parser_handles_youtube_auto_captions():
+    from brain.alt import parse_vtt
+    vtt = """WEBVTT
+Kind: captions
+
+00:00:01.000 --> 00:00:03.500 align:start position:0%
+the<00:00:01.500><c> truth</c><00:00:02.000><c> is</c>
+
+00:00:03.500 --> 00:00:03.510 align:start position:0%
+the truth is
+
+00:00:03.510 --> 00:00:06.000 align:start position:0%
+the truth is
+he&#39;s<00:00:04.000><c> an</c><c> industry plant</c>
+"""
+    segs = parse_vtt(vtt)
+    assert [s["text"] for s in segs] == ["the truth is", "he's an industry plant"]
+    assert segs[0]["start"] == 1.0 and abs(segs[1]["start"] - 3.51) < 1e-6
+
+
+def test_channel_matching_variants():
+    from brain.youtube import similarity
+    assert similarity("The Breakfast Club", "Breakfast Club Power 105.1 FM") >= 0.6
+    assert similarity("Gil's Arena", "Gils Arena") >= 0.6
+    assert similarity("Club Shay Shay", "Shannon Sharpe") < 0.6

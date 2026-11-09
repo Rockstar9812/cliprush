@@ -120,7 +120,7 @@ function ago(iso) {
 }
 const fmtNum = (n) => n >= 1e6 ? (n / 1e6).toFixed(1) + "M" : n >= 1e3 ? Math.round(n / 1e3) + "K" : String(n || 0);
 const rankCls = (s) => s >= 75 ? "r-hi" : s >= 58 ? "r-mid" : "r-lo";
-const CAT = { celebrity: "Celebrity", comedy: "Comedy", relationships: "Relationships", athlete: "Sports", nba: "NBA", adult: "Adult-star", watchlist: "Watchlist" };
+const CAT = { manual: "Your link", celebrity: "Celebrity", comedy: "Comedy", relationships: "Relationships", athlete: "Sports", nba: "NBA", adult: "Adult-star", watchlist: "Watchlist" };
 
 function toast(msg) {
   const t = $("#toast");
@@ -177,11 +177,13 @@ function viewBatches() {
 function viewClips() {
   const cats = ["all", ...new Set((DATA.clips || []).map((c) => c.cat).filter(Boolean))];
   let clips = (DATA.clips || []).slice();
-  if (FILTER === "approved" || FILTER === "posted") clips = clips.filter((c) => statusOf(c) === FILTER);
+  if (FILTER.startsWith("vid:")) clips = clips.filter((c) => c.video_id === FILTER.slice(4));
+  else if (FILTER === "approved" || FILTER === "posted") clips = clips.filter((c) => statusOf(c) === FILTER);
   else if (FILTER !== "all") clips = clips.filter((c) => c.cat === FILTER);
   clips = clips.filter((c) => FILTER === "posted" || statusOf(c) !== "skipped");
   const fbtn = (k, label) => `<button class="btn ${FILTER === k ? "on" : ""}" data-filter="${k}">${esc(label)}</button>`;
-  return `<div class="filters">${cats.map((k) => fbtn(k, k === "all" ? "All" : CAT[k] || k)).join("")}${fbtn("approved", "Approved")}${fbtn("posted", "Posted")}</div>
+  const vidBtn = FILTER.startsWith("vid:") ? fbtn(FILTER, "This video") : "";
+  return `<div class="filters">${vidBtn}${cats.map((k) => fbtn(k, k === "all" ? "All" : CAT[k] || k)).join("")}${fbtn("approved", "Approved")}${fbtn("posted", "Posted")}</div>
     <div class="section-title"><h2>${clips.length} clips</h2><span class="muted small">sorted by score + episode heat</span></div>
     ${clips.length ? `<div class="grid">${clips.map((c) => clipCard(c)).join("")}</div>` : `<div class="empty">No clips here yet.</div>`}`;
 }
@@ -214,7 +216,8 @@ function viewHealth() {
   const xs = h.x_study || {};
   const ai = h.ai || {};
   const notices = [];
-  if (h.youtube_blocked || h.pending_for_laptop) notices.push(`<div class="notice warn">YouTube is refusing GitHub's cloud right now. ${h.pending_for_laptop || 0} episode(s) are waiting - turn on your laptop and they finish automatically.</div>`);
+  if (h.youtube_blocked || h.pending_for_laptop) notices.push(`<div class="notice warn">YouTube and the free mirrors refused GitHub's cloud on the last run. ${h.pending_for_laptop || 0} episode(s) are waiting - run "ClipRush - Find clips now" on your laptop (or leave it on) and they finish automatically.</div>`);
+  else if (h.direct_blocked) notices.push(`<div class="notice ok">YouTube blocks GitHub's cloud, so ClipRush is reading episodes through free mirrors${Object.keys(h.via || {}).length ? ` (${esc(Object.keys(h.via).join(", "))})` : ""}. Working normally.</div>`);
   if (h.sources_found < h.sources_total) notices.push(`<div class="notice warn">${h.sources_total - h.sources_found} podcast channel(s) not found yet - fix their handle in config/sources.yaml (list below).</div>`);
   const ageMin = (Date.now() - new Date(DATA.generated).getTime()) / 60000;
   if (ageMin > 30) notices.push(`<div class="notice bad">Last update was ${ago(DATA.generated)}. Check GitHub > Actions for errors.</div>`);
@@ -232,7 +235,7 @@ function viewHealth() {
     <div class="panel"><h3>Activity</h3><div class="log">${esc((h.events || []).slice().reverse().join("\n")) || "No events yet."}</div></div>
     <div class="panel"><h3>Settings (this device)</h3>
       <label class="small muted">Repository</label><input id="setRepo" value="${esc(repo())}" placeholder="yourname/cliprush" />
-      <label class="small muted">Sync token (optional - syncs Approve/Posted between phone and laptop)</label><input id="setToken" type="password" value="${esc(token())}" placeholder="github_pat_..." />
+      <label class="small muted">GitHub token - needed for the Find clips button (permissions: Contents + Actions = Read and write). Also syncs Approve/Posted.</label><input id="setToken" type="password" value="${esc(token())}" placeholder="github_pat_..." />
       <label class="small muted">iPhone Shortcut name</label><input id="setShortcut" value="${esc(LS.get("cr_shortcut", "ClipRush Cut"))}" />
       <div class="actions" style="grid-template-columns:1fr 1fr"><button class="btn primary" data-act="save-settings">Save</button><button class="btn" data-act="lock">Lock & forget password</button></div>
     </div>`;
@@ -248,6 +251,86 @@ function render() {
   const v = { batches: viewBatches, clips: viewClips, episodes: viewEpisodes, insights: viewInsights, health: viewHealth }[TAB];
   $("#view").innerHTML = v();
   document.querySelectorAll("#tabs button").forEach((b) => b.classList.toggle("active", b.dataset.tab === TAB));
+}
+
+// ------------------------------------------------------------------ find clips now
+let RUN = null;
+const vidOf = (u) => (u.match(/(?:v=|youtu\.be\/|\/shorts\/|\/live\/|\/embed\/)([\w-]{11})/) || u.trim().match(/^([\w-]{11})$/) || [])[1] || "";
+
+function findModal() {
+  $("#modalBody").innerHTML = `<h3>Find clips now</h3>
+    <p class="muted small" style="margin:0 4px 10px">Starts the cloud brain immediately (instead of waiting for GitHub's schedule).
+      Paste a YouTube link to clip that exact video, or leave it empty to check every podcast. Usually ready in 2-4 minutes.</p>
+    <input id="findUrl" class="field" inputmode="url" placeholder="https://youtu.be/... (optional)" />
+    ${token() ? "" : `<input id="findToken" class="field" type="password" placeholder="GitHub token (one time - see Health > Settings)" />`}
+    <button class="btn primary wide" data-act="find-go">Find clips now</button>
+    <p class="muted small" style="margin:10px 4px 0">Laptop: double-click "ClipRush - Find clips now" on your Desktop - it also downloads the cut MP4s.</p>`;
+  $("#modal").classList.remove("hidden");
+  setTimeout(() => $("#findUrl")?.focus(), 50);
+}
+
+async function dispatchRun(url) {
+  const r = repo();
+  const h = { Authorization: `Bearer ${token()}`, Accept: "application/vnd.github+json" };
+  let branch = LS.get("cr_branch");
+  if (!branch) {
+    const info = await fetch(`https://api.github.com/repos/${r}`, { headers: h });
+    if (!info.ok) throw new Error(info.status === 401 ? "Token is not valid." : `Cannot open repository ${r} (${info.status}).`);
+    branch = (await info.json()).default_branch || "main";
+    LS.set("cr_branch", branch);
+  }
+  const res = await fetch(`https://api.github.com/repos/${r}/actions/workflows/brain.yml/dispatches`, {
+    method: "POST", headers: h, body: JSON.stringify({ ref: branch, inputs: { video_url: url || "" } }) });
+  if (res.status === 204) return;
+  if (res.status === 403 || res.status === 401) throw new Error("Your token needs Actions: Read and write (GitHub > Settings > Developer settings > Fine-grained tokens > edit token).");
+  if (res.status === 404) throw new Error("Workflow brain.yml not found - check .github/workflows on GitHub.");
+  if (res.status === 422) throw new Error("GitHub rejected the request - make sure the new brain.yml is uploaded.");
+  throw new Error(`GitHub error ${res.status}`);
+}
+
+function banner(html, cls = "") {
+  const b = $("#runBanner");
+  b.className = `run-banner ${cls}`;
+  b.innerHTML = html;
+}
+
+async function startFind() {
+  const url = ($("#findUrl")?.value || "").trim();
+  const tok = ($("#findToken")?.value || "").trim();
+  if (tok) LS.set("cr_token", tok);
+  if (!token()) return toast("Add your GitHub token first");
+  const vid = url ? vidOf(url) : "";
+  if (url && !vid) return toast("That doesn't look like a YouTube link");
+  closeModal();
+  try { await dispatchRun(url); } catch (e) { banner(esc(e.message), "fail"); setTimeout(() => $("#runBanner").classList.add("hidden"), 12000); return; }
+  RUN = { t0: Date.now(), since: DATA?.generated || "", vid };
+  pollRun();
+}
+
+async function pollRun() {
+  if (!RUN) return;
+  const sec = Math.round((Date.now() - RUN.t0) / 1000);
+  banner(`<span class="spin"></span><span>${RUN.vid ? "Clipping your link" : "Checking every podcast"} in the cloud... ${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, "0")} - usually 2-4 min. You can keep using the app.</span>`);
+  if (sec > 25) {
+    try { await load(PASSWORD, { quiet: true }); } catch { /* keep polling */ }
+    const lm = DATA?.health?.last_manual;
+    const fresh = DATA && DATA.generated > RUN.since && (!RUN.vid || (lm && lm.video === RUN.vid));
+    if (fresh) {
+      const n = RUN.vid ? DATA.clips.filter((c) => c.video_id === RUN.vid).length : 0;
+      const vid = RUN.vid;
+      RUN = null;
+      if (vid) { TAB = "clips"; FILTER = `vid:${vid}`; }
+      render();
+      const blocked = DATA.health?.youtube_blocked;
+      banner(vid ? (n ? `Done - ${n} clip${n > 1 ? "s" : ""} from your link.` : blocked
+        ? "YouTube and the mirrors refused the cloud for this video. Run 'Find clips now' on your laptop to finish it."
+        : "Done - no strong moments found in that video.") : "Done - all podcasts checked.", n || !vid ? "done" : "fail");
+      setTimeout(() => $("#runBanner").classList.add("hidden"), 10000);
+      return;
+    }
+  }
+  if (sec > 600) { RUN = null; banner("Still running after 10 minutes - check GitHub > Actions.", "fail"); return; }
+  setTimeout(pollRun, 15000);
 }
 
 // ------------------------------------------------------------------ actions
@@ -317,6 +400,7 @@ document.addEventListener("click", async (ev) => {
     setStatus(c.id, "posted", { link: link.trim() }); closeModal(); toast("Marked as posted");
   } else if (act === "skip" && c) { setStatus(c.id, "skipped"); closeModal(); }
   else if (act === "reset" && c) { setStatus(c.id, ""); closeModal(); }
+  else if (act === "find-go") startFind();
   else if (act === "save-settings") {
     LS.set("cr_repo", $("#setRepo").value.trim()); LS.set("cr_token", $("#setToken").value.trim());
     LS.set("cr_shortcut", $("#setShortcut").value.trim() || "ClipRush Cut"); toast("Saved"); refresh();
@@ -337,6 +421,8 @@ function closeModal() { $("#modal").classList.add("hidden"); $("#modalBody").inn
 $("#modalClose").onclick = closeModal;
 $("#modal").addEventListener("click", (e) => { if (e.target.id === "modal") closeModal(); });
 $("#statusPill").onclick = () => { TAB = "health"; render(); };
+$("#findBtn").onclick = () => (DATA ? findModal() : toast("Unlock first"));
+document.addEventListener("keydown", (e) => { if (e.key === "Enter" && e.target.id === "findUrl") startFind(); });
 
 async function refresh() {
   if (!PASSWORD) return;
@@ -372,7 +458,22 @@ $("#lockForm").addEventListener("submit", async (ev) => {
   }
 });
 
+function applySetupLink() {
+  // One-tap setup from the laptop / QR code: #setup=<base64 {r, p, t}>. Saved on this device, then removed from the URL.
+  const m = location.hash.match(/setup=([\w-]+)/);
+  if (!m) return;
+  try {
+    const b = m[1].replace(/-/g, "+").replace(/_/g, "/");
+    const cfg = JSON.parse(atob(b + "===".slice((b.length + 3) % 4)));
+    if (cfg.r) LS.set("cr_repo", cfg.r);
+    if (cfg.p) LS.set("cr_pw", cfg.p);
+    if (cfg.t) LS.set("cr_token", cfg.t);
+  } catch { /* ignore a broken link */ }
+  history.replaceState(null, "", location.pathname + location.search);
+}
+
 (async function start() {
+  applySetupLink();
   if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
   const saved = LS.get("cr_pw");
   if (!saved) return showLock();

@@ -55,9 +55,12 @@ def main(argv=None) -> int:
     r.add_argument("--mode", default=os.environ.get("CLIPRUSH_MODE", "cloud"))
     r.add_argument("--tasks", default="watch,study")
     r.add_argument("--deadline", type=float, default=float(os.environ.get("CLIPRUSH_DEADLINE", 540)))
+    r.add_argument("--video", default=os.environ.get("VIDEO_URL", ""), help="YouTube link to clip right now")
     sub.add_parser("cut")
     lp = sub.add_parser("laptop")
     lp.add_argument("--no-cut", action="store_true")
+    lp.add_argument("--video", default="", help="YouTube link to clip right now")
+    lp.add_argument("--open", action="store_true", help="open the clips folder when done")
     st = sub.add_parser("selftest")
     st.add_argument("--online", action="store_true", help="also test internet sources and keys")
     a = ap.parse_args(argv)
@@ -67,7 +70,8 @@ def main(argv=None) -> int:
         return run_selftest(online=a.online)
     if a.cmd == "run":
         from .pipeline import Cycle
-        h = Cycle(mode=a.mode, deadline_s=a.deadline).run(tuple(t.strip() for t in a.tasks.split(",") if t.strip()))
+        h = Cycle(mode=a.mode, deadline_s=a.deadline).run(tuple(t.strip() for t in a.tasks.split(",") if t.strip()),
+                                                         video=a.video.strip())
         print(f"OK - {h.get('sources_found')}/{h.get('sources_total')} sources, blocked={h.get('youtube_blocked')}")
         return 0
     if a.cmd in ("cut", "laptop"):
@@ -80,9 +84,19 @@ def main(argv=None) -> int:
     if a.cmd == "laptop":
         from .cutter import run_cutter
         from .pipeline import Cycle
-        Cycle(mode="laptop", deadline_s=1500).run(("watch", "study"))
+        h = Cycle(mode="laptop", deadline_s=1500).run(("watch", "study"), video=a.video.strip())
+        print(f"Checked {h.get('sources_found')}/{h.get('sources_total')} podcasts")
         if not a.no_cut:
-            print(f"Saved {len(run_cutter())} clips")
+            made = run_cutter()
+            print(f"Saved {len(made)} new clip files")
+        if a.open:
+            from .config import Config
+            folder = Path(os.path.expandvars(os.path.expanduser(Config().get("laptop.clips_folder", "~/ClipRush"))))
+            folder.mkdir(parents=True, exist_ok=True)
+            if hasattr(os, "startfile"):
+                os.startfile(str(folder))  # noqa: S606 - Windows only
+            else:
+                print(folder)
         return 0
     return 1
 

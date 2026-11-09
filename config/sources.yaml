@@ -1,4 +1,6 @@
 # What ClipRush watches. Edit freely; the Health tab shows any source it could not find.
+# `handle` is the YouTube @handle. `titles` = other names the channel uses. You can also paste a
+# `channel_id: "UC..."` (from the channel page > About > Share > Copy channel ID) to skip lookups.
 # `handle` is the YouTube @handle. If a handle is wrong, ClipRush searches YouTube by
 # `name` and checks the channel title, so a wrong guess heals itself (see Health tab).
 
@@ -6,7 +8,7 @@ podcasts:
   # --- Celebrity & hip-hop interviews ---
   - {name: "Club Shay Shay", handle: "ClubShayShay", tier: 1, cat: celebrity}
   - {name: "Nightcap", handle: "NightcapShow", tier: 1, cat: celebrity}
-  - {name: "The Breakfast Club", handle: "BreakfastClubPower1051", tier: 1, cat: celebrity}
+  - {name: "The Breakfast Club", handle: "BreakfastClubPower1051", tier: 1, cat: celebrity, titles: ["Breakfast Club Power 105.1 FM", "Breakfast Club Power 105.1"]}
   - {name: "Drink Champs", handle: "DrinkChamps", tier: 1, cat: celebrity}
   - {name: "The Joe Budden Podcast", handle: "JoeBuddenPodcast", tier: 1, cat: celebrity}
   - {name: "Million Dollaz Worth of Game", handle: "MillionDollazWorthOfGame", tier: 1, cat: celebrity}
@@ -15,7 +17,7 @@ podcasts:
   - {name: "Big Facts", handle: "BigFactsPod", tier: 2, cat: celebrity}
   - {name: "The Pivot Podcast", handle: "ThePivotPodcast", tier: 1, cat: athlete}
   # --- Comedy & big personalities ---
-  - {name: "The Joe Rogan Experience", handle: "joerogan", tier: 1, cat: comedy}
+  - {name: "The Joe Rogan Experience", handle: "joerogan", tier: 1, cat: comedy, titles: ["PowerfulJRE", "JRE"]}
   - {name: "This Past Weekend w/ Theo Von", handle: "TheoVon", tier: 1, cat: comedy}
   - {name: "Flagrant", handle: "flagrant", tier: 1, cat: comedy}
   - {name: "Kill Tony", handle: "KillTony", tier: 2, cat: comedy}
@@ -48,9 +50,9 @@ podcasts:
   - {name: "Game Recognize Game", handle: "GameRecognizeGame", tier: 3, cat: nba}
   # --- Adult-star podcasts (talk/interview moments only) ---
   - {name: "Private Talk With Alexis Texas", handle: "AlexisTexas", tier: 2, cat: adult}
-  - {name: "The Lisa Ann Experience", handle: "TheLisaAnnExperience", tier: 2, cat: adult}
+  - {name: "The Lisa Ann Experience", handle: "thelisaannexperience", tier: 2, cat: adult, titles: ["Lisa Ann"]}
   - {name: "Holly Randall Unfiltered", handle: "HollyRandall", tier: 3, cat: adult}
-  - {name: "Adult Empire Podcast", handle: "AdultEmpire", tier: 3, cat: adult}
+  - {name: "Adult Empire Podcast", handle: "AdultEmpireCom", tier: 3, cat: adult, titles: ["Adult Empire"]}
 
 # People are searched across ALL of YouTube (any channel), so a viral guest appearance
 # on a podcast that is not listed above is still caught. tier 1 = biggest reach.

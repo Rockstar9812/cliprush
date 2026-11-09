@@ -1,19 +1,25 @@
 name: ClipRush brain
 
-# Runs every 5 minutes for free (public repository). For exact timing, a free cron-job.org
-# job can also call the repository_dispatch trigger below (see README, step 6).
+# Runs every 5 minutes for free (public repository). GitHub often delays free schedules, so
+# the app's "Find clips now" button (and an optional cron-job.org job) start it instantly.
 on:
   schedule:
     - cron: "*/5 * * * *"
   workflow_dispatch:
+    inputs:
+      video_url:
+        description: "Optional: a YouTube link to clip right now"
+        required: false
+        default: ""
   repository_dispatch:
-    types: [tick]
+    types: [tick, clip]
 
 permissions:
   contents: write
 
 concurrency:
-  group: cliprush-brain
+  # scheduled runs queue behind each other; manual runs are never cancelled
+  group: cliprush-${{ github.event_name == 'schedule' && 'sched' || github.run_id }}
   cancel-in-progress: false
 
 jobs:
@@ -36,5 +42,7 @@ jobs:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           APIFY_TOKEN: ${{ secrets.APIFY_TOKEN }}
+          YT_COOKIES: ${{ secrets.YT_COOKIES }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VIDEO_URL: ${{ github.event.inputs.video_url || github.event.client_payload.video_url || '' }}
         run: python -m brain run --mode cloud --deadline 480

@@ -35,19 +35,35 @@ class _QuietLogger:
         log.debug("yt-dlp: %s", msg)
 
 
+_FILLER = {"the", "podcast", "show", "official", "with", "w", "pod", "channel", "tv", "fm", "s"}
+
+
 def similarity(a: str, b: str) -> float:
-    norm = lambda s: re.sub(r"[^a-z0-9]+", " ", s.lower()).strip()
+    norm = lambda s: re.sub(r"[^a-z0-9]+", " ", s.lower()).strip()  # noqa: E731
     a, b = norm(a), norm(b)
     if not a or not b:
         return 0.0
     if a in b or b in a:
         return 0.95
+    ta = [t for t in a.split() if t not in _FILLER]
+    tb = set(t for t in b.split() if t not in _FILLER)
+    if ta and tb:
+        overlap = sum(1 for t in ta if t in tb) / len(ta)
+        if overlap >= 0.66:
+            return 0.9
+        if " ".join(ta) in " ".join(sorted(tb)) or "".join(ta) in "".join(b.split()):
+            return 0.9
     return difflib.SequenceMatcher(None, a, b).ratio()
 
 
 # ---------------------------------------------------------------- channels
-def resolve_channel(http: Http, name: str, handle: str = "") -> Optional[dict]:
-    """Return {channel_id, title, method} or None. Verifies the title matches `name`."""
+def resolve_channel(http: Http, name: str, handle: str = "", titles: Optional[list] = None,
+                    mirrors=None) -> Optional[dict]:
+    """Return {channel_id, title, method} or None. Verifies the title matches `name` (or `titles`)."""
+    names = [name] + list(titles or [])
+
+    def match(title: str, need: float = 0.6) -> bool:
+        return any(similarity(n, title) >= need for n in names)
     if handle:
         r = http.get(f"https://www.youtube.com/@{handle.lstrip('@')}", cookies=CONSENT_COOKIES)
         if r is not None and r.status_code == 200:
@@ -56,7 +72,7 @@ def resolve_channel(http: Http, name: str, handle: str = "") -> Optional[dict]:
                                  r'channel_id=(UC[\w-]{22})', r'"channelId":"(UC[\w-]{22})"'])
             title = _find(r.text, [r'<meta property="og:title" content="([^"]+)"',
                                    r'"title":"([^"]+)","description"']) or ""
-            if cid and (similarity(name, title) >= 0.5 or similarity(handle, title) >= 0.6):
+            if cid and (match(title, 0.5) or similarity(handle, title) >= 0.6):
                 return {"channel_id": cid, "title": _unescape(title), "method": "handle"}
             if cid:
                 log.info("Handle @%s resolved to '%s' which does not match '%s' - searching", handle, title, name)
@@ -65,10 +81,20 @@ def resolve_channel(http: Http, name: str, handle: str = "") -> Optional[dict]:
         elif r is None:
             raise Unreachable("youtube.com did not answer")
     # Fallback: search YouTube for the show name and pick the best-matching channel.
-    for e in search(f"{name} podcast", 8, by_date=False):
-        ch = e.get("channel") or ""
-        if e.get("channel_id") and similarity(name, ch) >= 0.6:
-            return {"channel_id": e["channel_id"], "title": ch, "method": "search"}
+    blocked = None
+    try:
+        for e in search(f"{name} podcast", 8, by_date=False):
+            ch = e.get("channel") or ""
+            if e.get("channel_id") and match(ch):
+                return {"channel_id": e["channel_id"], "title": ch, "method": "search"}
+    except Blocked as b:
+        blocked = b
+    if mirrors is not None:
+        for ch in mirrors.search_channels(name):
+            if match(ch.get("title", "")):
+                return {"channel_id": ch["channel_id"], "title": ch["title"], "method": "mirror"}
+    if blocked:
+        raise blocked
     return None
 
 
@@ -123,11 +149,50 @@ def parse_rss(xml_text: str) -> list[dict]:
 
 
 # ------------------------------------------------------------------ yt-dlp
+_COOKIE_FILE: Optional[str] = None
+
+
+def cookie_file() -> Optional[str]:
+    """Optional: YouTube cookies (Netscape format) from a THROWAWAY Google account, given as the
+    YT_COOKIES secret. Helps when YouTube asks the cloud to 'confirm you're not a bot'."""
+    global _COOKIE_FILE
+    import os
+    import tempfile
+    raw = os.environ.get("YT_COOKIES", "").strip()
+    if not raw:
+        return None
+    if _COOKIE_FILE is None:
+        fd, path = tempfile.mkstemp(suffix=".txt")
+        with os.fdopen(fd, "w") as f:
+            f.write(raw if raw.startswith("# Netscape") else "# Netscape HTTP Cookie File\n" + raw)
+            f.write("\n")
+        _COOKIE_FILE = path
+    return _COOKIE_FILE
+
+
+def attach_cookies(http: Http) -> bool:
+    cf = cookie_file()
+    if not cf:
+        return False
+    from http.cookiejar import MozillaCookieJar
+    jar = MozillaCookieJar(cf)
+    try:
+        jar.load(ignore_discard=True, ignore_expires=True)
+    except Exception as e:  # noqa: BLE001
+        log.warning("YT_COOKIES could not be read: %s", e)
+        return False
+    for c in jar:
+        http.s.cookies.set_cookie(c)
+    return True
+
+
 def _ydl(extra: Optional[dict] = None):
     import yt_dlp
     opts = {"quiet": True, "no_warnings": True, "skip_download": True, "noplaylist": True,
             "socket_timeout": 20, "retries": 2, "extractor_retries": 2, "ignoreerrors": False,
             "logger": _QuietLogger()}
+    if cookie_file():
+        opts["cookiefile"] = cookie_file()
     if extra:
         opts.update(extra)
     return yt_dlp.YoutubeDL(opts)

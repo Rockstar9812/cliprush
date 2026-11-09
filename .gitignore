@@ -6,3 +6,9 @@ docs/local/
 laptop/cliprush.env
 laptop/config_cache/
 laptop/last_run.log
+# never upload your keys
+*password*.txt
+*Password*.txt
+*keys*.txt
+laptop/phone_setup.html
+laptop/app_link.txt

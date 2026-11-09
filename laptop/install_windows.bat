@@ -39,6 +39,9 @@ echo Registering background task: every 30 minutes and at sign-in ...
 schtasks /create /f /tn "ClipRush" /sc minute /mo 30 /tr "wscript.exe \"%~dp0run_hidden.vbs\"" >nul
 schtasks /create /f /tn "ClipRush at sign-in" /sc onlogon /tr "wscript.exe \"%~dp0run_hidden.vbs\"" >nul
 
+echo Adding "ClipRush - Find clips now" to your Desktop ...
+> "%USERPROFILE%\Desktop\ClipRush - Find clips now.bat" echo @call "%~dp0Find clips now.bat"
+
 echo.
 echo Running the self-test ...
 python -m brain selftest --online

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import math
+import re
 import os
 import time
 from datetime import datetime, timedelta
@@ -9,6 +10,7 @@ from typing import Optional
 
 from . import youtube as yt
 from .ai import AI
+from .alt import Mirrors
 from .captions import caption_ok, clean_caption, hook_text, template_caption
 from .config import Config
 from .learn import build_playbook
@@ -35,8 +37,12 @@ class Cycle:
             raise SystemExit("CLIPRUSH_PASSWORD must be set (8+ characters).")
         self.t0 = time.time()
         self.deadline = deadline_s
-        self.yt_blocked = False
+        self.yt_blocked = False      # YouTube AND the free mirrors failed -> laptop needed
+        self.direct_blocked = False  # YouTube refused us directly; mirrors still tried
         self.events: list[str] = []
+        self.via: dict[str, int] = {}
+        if yt.attach_cookies(self.http):
+            log.info("Using YT_COOKIES for YouTube requests")
 
     # ----------------------------------------------------------------- utils
     def time_left(self) -> float:
@@ -47,25 +53,34 @@ class Cycle:
         self.events.append(f"{datetime.now(IST).strftime('%H:%M')} {msg}")
 
     # ------------------------------------------------------------------- run
-    def run(self, tasks: tuple[str, ...] = ("watch", "study")) -> dict:
+    def run(self, tasks: tuple[str, ...] = ("watch", "study"), video: str = "") -> dict:
         head0 = self.store.head()
         self.app, self.brain = load(self.store, self.password)
         b = self.brain
-        for k in ("episodes", "clips", "channels", "xstudy", "ai_usage", "health", "playbook"):
+        for k in ("episodes", "clips", "channels", "xstudy", "ai_usage", "health", "playbook", "mirrors"):
             b.setdefault(k, {})
         self.feedback = load_feedback(self.store)
         self.ai = AI(self.http, self.cfg, b["ai_usage"])
+        self.mirrors = Mirrors(self.http, b["mirrors"])
+        b["last_manual"] = None
+        if video:
+            self.add_manual(video)
 
         if "watch" in tasks:
             for step in (self.discover, self.process):
                 try:
                     step()
-                    continue
                 except yt.Blocked as e:
+                    self.direct_blocked = True
+                    self.note(f"YouTube refused this {self.mode} machine ({str(e)[:70]})"
+                              + (" - using free mirrors" if step == self.discover else ""))
+                    if step == self.discover:
+                        continue
                     self.yt_blocked = True
-                    self.note(f"YouTube refused this {self.mode} machine ({str(e)[:80]}); laptop will finish the rest")
                 except yt.Unreachable as e:
                     self.note(f"Network problem reaching YouTube ({str(e)[:80]}) - retrying next run")
+            if self.via:
+                self.note("Read via: " + ", ".join(f"{k} x{v}" for k, v in self.via.items()))
         if "study" in tasks and self.study_due():
             try:
                 run_study(self.http, self.cfg, b["xstudy"], self.people, self.cfg.podcasts)
@@ -85,6 +100,25 @@ class Cycle:
         save(self.store, self.app, self.brain, self.password, f"ClipRush {self.mode} {iso(now_utc())}")
         return self.app["health"]
 
+    # ---------------------------------------------------------------- manual
+    def add_manual(self, url: str) -> None:
+        import re as _re
+        m = _re.search(r"(?:v=|youtu\.be/|/shorts/|/live/|/embed/)([\w-]{11})", url) or _re.fullmatch(r"\s*([\w-]{11})\s*", url)
+        if not m:
+            self.note(f"Manual: could not read a YouTube video id from '{url[:60]}'")
+            return
+        vid = m.group(1)
+        e = self.brain["episodes"].get(vid)
+        if e and e.get("stage") == "done":
+            e["_rescore"] = ["manual"]
+        e = e or {"id": vid, "title": "(manual)", "show": "Manual", "cat": "manual", "podcast_tier": 2, "guest": None,
+                  "guest_tier": 9, "published": "", "views": 0, "found": iso(now_utc())}
+        e.update({"stage": "new" if e.get("stage") != "done" else "done", "source": "manual", "manual": True,
+                  "updated": iso(now_utc()), "tries": 0})
+        self.brain["episodes"][vid] = e
+        self.brain["last_manual"] = {"video": vid, "at": iso(now_utc())}
+        self.note(f"Manual request: clipping https://youtu.be/{vid}")
+
     # ------------------------------------------------------------- discovery
     def resolve_channels(self) -> None:
         ch = self.brain["channels"]
@@ -102,7 +136,7 @@ class Cycle:
             if self.time_left() < 120:
                 break
             try:
-                res = yt.resolve_channel(self.http, p.name, p.handle)
+                res = yt.resolve_channel(self.http, p.name, p.handle, p.titles, self.mirrors)
             except yt.Unreachable:
                 self.note("YouTube unreachable right now (network) - will retry next run")
                 break
@@ -152,7 +186,15 @@ class Cycle:
         for person in batch:
             if self.time_left() < 150:
                 break
-            for r in yt.search(f"{person.name} podcast", 6, by_date=True):
+            if self.direct_blocked:
+                results = self.mirrors.search_videos(f"{person.name} podcast", 6)
+            else:
+                try:
+                    results = yt.search(f"{person.name} podcast", 6, by_date=True)
+                except yt.Blocked:
+                    self.direct_blocked = True
+                    results = self.mirrors.search_videos(f"{person.name} podcast", 6)
+            for r in results:
                 if r["video_id"] in eps or r.get("channel_id") in watched:
                     continue
                 if r.get("duration") and r["duration"] < min_s:
@@ -184,6 +226,8 @@ class Cycle:
                 todo.append(e)
             elif st == "no_transcript" and hours_since(e.get("updated")) >= 0.5 and e.get("tries", 0) < 8:
                 todo.append(e)
+            elif st == "done" and e.get("_rescore"):
+                todo.append(e)
             elif st == "done":
                 age = hours_since(e.get("published") or e.get("found"))
                 due = [h for h in RESCORE_AT_H if age >= h and h not in e.get("rescored", [])]
@@ -192,13 +236,9 @@ class Cycle:
                     todo.append(e)
             elif st == "needs_local" and self.mode == "cloud" and hours_since(e.get("updated")) >= 3:
                 todo.append(e)  # cloud retries occasionally in case YouTube stops blocking
-        todo.sort(key=lambda e: (e.get("stage") != "new", -self._hot(e)))
+        todo.sort(key=lambda e: (not e.get("manual") or e.get("stage") == "done" and not e.get("_rescore"),
+                                 e.get("stage") != "new", -self._hot(e)))
         limit = int(self.cfg.get("discovery.max_new_episodes_per_run", 6)) * (3 if self.mode != "cloud" else 1)
-        if self.yt_blocked and self.mode == "cloud":
-            for e in todo:
-                if e.get("stage") == "new":
-                    e["stage"], e["updated"] = "needs_local", iso(now_utc())
-            return
         for e in todo[:limit]:
             if self.time_left() < 90 or self.yt_blocked:
                 break
@@ -207,6 +247,9 @@ class Cycle:
             except yt.Blocked:
                 e["stage"] = "needs_local"
                 e["updated"] = iso(now_utc())
+                for rest in todo[todo.index(e) + 1:]:
+                    if rest.get("stage") == "new":
+                        rest["stage"], rest["updated"] = "needs_local", iso(now_utc())
                 raise
             except yt.Unreachable:
                 self.note("Network problem while reading an episode - will retry next run")
@@ -221,10 +264,39 @@ class Cycle:
             finally:
                 e.pop("_rescore", None) if e.get("stage") != "done" else None
 
+    def fetch_video(self, vid: str) -> tuple[dict, list[dict], str]:
+        """YouTube directly; if YouTube blocks this machine, free Invidious/Piped mirrors."""
+        info, segs, src = None, None, ""
+        if not self.direct_blocked:
+            try:
+                info = yt.video_info(vid, with_comments=True)
+                segs, src = yt.transcript(self.http, vid, info)
+            except yt.Blocked:
+                self.direct_blocked = True
+                segs = None
+        if info is None or segs is None:
+            alt = self.mirrors.video(vid)
+            if not alt:
+                raise yt.Blocked("YouTube and all free mirrors refused")
+            ainfo, segs = alt
+            if info is None:
+                info = ainfo
+            elif not info.get("comments"):
+                info["comments"] = ainfo.get("comments", [])
+            host = re.sub(r"^https?://", "", ainfo.get("via", "mirror"))
+            src = f"mirror:{host}"
+            self.via[host] = self.via.get(host, 0) + 1
+        return info, segs, src
+
     def analyse(self, e: dict) -> None:
         cfg = self.cfg
-        info = yt.video_info(e["id"], with_comments=True)
+        info, segs, src = self.fetch_video(e["id"])
         e["updated"] = iso(now_utc())
+        if e.get("manual"):
+            e["title"] = info.get("title") or e["title"]
+            e["show"] = info.get("channel") or e["show"]
+            if not e.get("guest"):
+                e["guest"], e["guest_tier"] = guest_from_title(e["title"], e["show"], self.people)
         if info.get("live_status") in ("is_live", "is_upcoming"):
             e["stage"] = "new"  # premiere / live stream not finished yet - try again next run
             return
@@ -232,11 +304,12 @@ class Cycle:
         ts = info.get("timestamp") or info.get("release_timestamp")
         if ts:
             e["published"] = iso(datetime.fromtimestamp(ts, UTC))
-        if dur and dur < 60 * float(cfg.get("discovery.min_episode_minutes", 12)):
+        if dur and dur < 60 * float(cfg.get("discovery.min_episode_minutes", 12)) and not e.get("manual"):
             e["stage"] = "skipped"
             e["skip_reason"] = "too short"
             return
-        if hours_since(e.get("published")) > float(cfg.get("discovery.max_episode_age_hours", 48)) + 24:
+        if hours_since(e.get("published")) > float(cfg.get("discovery.max_episode_age_hours", 48)) + 24 \
+                and not e.get("manual"):
             e["stage"] = "skipped"
             e["skip_reason"] = "too old"
             return
@@ -245,7 +318,6 @@ class Cycle:
                   "has_heatmap": bool(info.get("heatmap"))})
         if (info.get("age_limit") or 0) >= 18:
             e["age_restricted"] = True
-        segs, src = yt.transcript(self.http, e["id"], info)
         if not segs:
             e["stage"] = "no_transcript"
             e["tries"] = e.get("tries", 0) + 1
@@ -260,7 +332,7 @@ class Cycle:
         self.make_clips(e, moments, segs)
         e["stage"] = "done"
         e["analysed"] = iso(now_utc())
-        e["rescored"] = sorted(set(e.get("rescored", []) + e.pop("_rescore", [])))
+        e["rescored"] = sorted(set(e.get("rescored", []) + [h for h in e.pop("_rescore", []) if h != "manual"]))
         if not e["rescored"]:
             age = hours_since(e.get("published") or e.get("found"))
             e["rescored"] = [h for h in RESCORE_AT_H if age >= h]
@@ -313,6 +385,10 @@ class Cycle:
                 "age_restricted": e.get("age_restricted", False), "lines": c["lines"],
             })
         built.sort(key=lambda x: -x["score"])
+        if e.get("manual"):  # you asked for this video: always show its best moments
+            min_score *= 0.5
+            for c in built:
+                c["manual"] = True
         for c in built[:keep]:
             if c["score"] >= min_score:
                 clips[c["id"]] = c
@@ -321,7 +397,12 @@ class Cycle:
     def study_due(self) -> bool:
         if not self.cfg.x_accounts:
             return False
-        return hours_since(self.brain["xstudy"].get("last_run")) >= float(self.cfg.get("x_study.every_hours", 3))
+        xs = self.brain["xstudy"]
+        if self.mode != "cloud" and "blocked" in str((xs.get("health") or {}).get("sources", {})) \
+                and hours_since(xs.get("laptop_run")) >= 1:
+            xs["laptop_run"] = iso(now_utc())
+            return True
+        return hours_since(xs.get("last_run")) >= float(self.cfg.get("x_study.every_hours", 3))
 
     # ---------------------------------------------------------------- publish
     def prune(self) -> None:
@@ -380,6 +461,7 @@ class Cycle:
         xs = b.get("xstudy", {})
         health = {
             "updated": iso(now_utc()), "mode": self.mode, "youtube_blocked": self.yt_blocked,
+            "direct_blocked": self.direct_blocked, "via": self.via, "last_manual": b.get("last_manual"),
             "pending_for_laptop": pending_local, "sources_found": sum(s["ok"] for s in sources),
             "sources_total": len(sources), "ai": {"available": self.ai.available, "tokens_today": b["ai_usage"].get("tokens", 0),
                                                   "exhausted": b["ai_usage"].get("exhausted", []),

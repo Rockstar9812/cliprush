@@ -48,6 +48,7 @@ class Podcast:
     tier: int = 2
     cat: str = "other"
     channel_id: str = ""
+    titles: list = field(default_factory=list)
 
 
 class Config:
