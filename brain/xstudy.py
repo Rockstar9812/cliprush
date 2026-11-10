@@ -88,13 +88,51 @@ def _int(v: Any) -> int:
 
 # --------------------------------------------------------------- fxtwitter
 def fetch_fx(http: Http, account: str, post_id: str) -> Optional[dict]:
-    r = http.get(f"https://api.fxtwitter.com/{account or 'i'}/status/{post_id}")
-    if r is None or r.status_code != 200:
+    for url in (f"https://api.fxtwitter.com/2/status/{post_id}", f"https://api.fxtwitter.com/{account or 'i'}/status/{post_id}"):
+        r = http.get(url, headers={"User-Agent": "ClipRush/1.3 (personal research)"})
+        if r is not None and r.status_code == 200:
+            try:
+                p = parse_fx(r.json())
+                if p:
+                    return p
+            except ValueError:
+                pass
+    return None
+
+
+def fetch_fx_timeline(http: Http, handle: str, count: int = 40) -> Optional[list[dict]]:
+    """Newest posts of an account via FxTwitter's public API (their servers fetch X, no login).
+    None = unavailable, [] = no video posts."""
+    r = http.get(f"https://api.fxtwitter.com/2/profile/{handle}/statuses", params={"count": count},
+                 headers={"User-Agent": "ClipRush/1.3 (personal research)"})
+    if r is None:
+        return None
+    if r.status_code == 204:
+        return []
+    if r.status_code != 200:
         return None
     try:
-        return parse_fx(r.json())
+        return parse_fx_timeline(r.json(), handle)
     except ValueError:
         return None
+
+
+def parse_fx_timeline(j: dict, handle: str = "") -> list[dict]:
+    out = []
+    for it in j.get("results") or []:
+        if not isinstance(it, dict):
+            continue
+        items = it.get("statuses") if it.get("type") == "thread" else [it]
+        for st in items or []:
+            if not isinstance(st, dict) or st.get("reposted_by"):
+                continue  # skip reposts of other accounts' clips
+            p = parse_fx({"status": st})
+            if not p or not p.get("has_video"):
+                continue
+            if handle and p["account"] and p["account"].lower() != handle.lower():
+                continue
+            out.append(p)
+    return out
 
 
 def parse_fx(j: dict) -> Optional[dict]:
@@ -138,9 +176,11 @@ class Apify:
         n = min(max_items, self.remaining_items())
         if not self.ok or n <= 0:
             return []
-        inp = {"handles": handles, "twitterHandles": handles, "usernames": handles, "from": handles,
-               "searchTerms": terms, "queries": terms, "maxItems": n, "maxTweets": n, "limit": n,
-               "sort": "Latest", "onlyVideo": True, "includeSearchTerms": False}
+        inp = {"maxItems": n}
+        if handles:
+            inp["twitterHandles"] = handles
+        if terms:
+            inp["searchTerms"] = [f"{t} filter:videos min_faves:500" for t in terms]
         r = self.http.post(f"https://api.apify.com/v2/acts/{self.actor}/run-sync-get-dataset-items",
                            params={"token": self.token, "timeout": 120}, json=inp)
         if r is None or r.status_code not in (200, 201):
@@ -187,7 +227,7 @@ def map_apify(i: dict) -> Optional[dict]:
 # ---------------------------------------------------------------- the study
 def tag_post(p: dict, people: PeopleIndex, podcasts: list) -> dict:
     t = p.get("text", "")
-    p["people"] = [x.name for x in people.find(t, allow_last_name=True)][:4]
+    p["people"] = [x.name for x in people.find(t, allow_last_name=False)][:4]
     nt = norm(t)
     p["podcast"] = next((pc.name for pc in podcasts if len(norm(pc.name)) > 5 and norm(pc.name) in nt), "")
     words = [w for w in re.sub(r"https?://\S+", "", t).split() if w.strip()]
@@ -226,16 +266,18 @@ def run_study(http: Http, cfg, xs: dict, people: PeopleIndex, podcasts: list) ->
             if any(snap[1:]):
                 cur.setdefault("snaps", []).append(snap)
 
-    # 1) new posts per account via the free embed timeline
+    # 1) new posts per account: FxTwitter public timeline first (works from the cloud), X embed second
     for h in cfg.x_accounts:
-        res = fetch_syndication(http, h)
+        res, src = fetch_fx_timeline(http, h), "fx-timeline"
+        if res is None:
+            res, src = fetch_syndication(http, h), "syndication"
         if res is None:
             blocked_accounts.append(h)
-            health["sources"][h] = "blocked"
+            health["sources"][h] = "unavailable right now"
             continue
-        health["sources"][h] = f"ok ({len(res)})"
+        health["sources"][h] = f"ok via {src} ({len(res)} video posts)"
         for p in res:
-            upsert(p, "syndication")
+            upsert(p, src)
 
     # 2) Apify backup for blocked accounts + trend search (only within the free credit)
     if apify.ok:

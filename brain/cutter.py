@@ -46,32 +46,40 @@ def _ass_escape(s: str) -> str:
     return s.replace("\\", "").replace("{", "(").replace("}", ")").replace("\n", " ")
 
 
-def _wrap(text: str, width: int = 34) -> str:
-    words, lines, cur = text.split(), [], ""
-    for w in words:
-        if len(cur) + len(w) + 1 > width and cur:
-            lines.append(cur)
-            cur = w
-        else:
-            cur = f"{cur} {w}".strip()
-    if cur:
-        lines.append(cur)
-    return r"\N".join(lines[-2:]) if len(lines) > 2 else r"\N".join(lines)
+def _chunks(a: float, b: float, text: str, max_words: int = 7) -> list[tuple[float, float, str]]:
+    """Split one caption line into short pieces (max ~7 words) timed by word count - nothing is dropped."""
+    words = text.split()
+    if not words:
+        return []
+    n = max(1, -(-len(words) // max_words))
+    per = -(-len(words) // n)
+    out, t = [], a
+    for i in range(0, len(words), per):
+        piece = words[i:i + per]
+        dur = (b - a) * len(piece) / len(words)
+        out.append((t, t + dur, " ".join(piece)))
+        t += dur
+    return out
 
 
 def make_ass(clip: dict, hook_seconds: float, w: int = 1920, h: int = 1080) -> str:
-    fs = int(h * 0.058)
-    hs = int(h * 0.062)
+    """Captions are pinned to the bottom-centre with an explicit position on every line
+    (\\an2 + \\pos), so no player or ffmpeg build can move them to the middle."""
+    fs = int(h * 0.055)
+    hs = int(h * 0.060)
+    bottom_y = int(h * 0.94)
+    top_y = int(h * 0.06)
     head = f"""[Script Info]
 ScriptType: v4.00+
 PlayResX: {w}
 PlayResY: {h}
-WrapStyle: 2
+WrapStyle: 0
+ScaledBorderAndShadow: yes
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Cap,Arial,{fs},&H00FFFFFF,&H000000FF,&H00000000,&H64000000,-1,0,0,0,100,100,0,0,1,{max(3, fs // 12)},2,2,80,80,{int(h * 0.07)},1
-Style: Hook,Arial,{hs},&H0000FFFF,&H000000FF,&H00000000,&HB4000000,-1,0,0,0,100,100,0,0,3,{max(4, hs // 10)},0,8,80,80,{int(h * 0.06)},1
+Style: Cap,Arial,{fs},&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,{max(3, fs // 11)},2,2,90,90,{h - bottom_y},1
+Style: Hook,Arial,{hs},&H0000FFFF,&H000000FF,&H00000000,&HB4000000,-1,0,0,0,100,100,0,0,3,{max(4, hs // 10)},0,8,90,90,{top_y},1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -79,10 +87,13 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
     ev = []
     dur = float(clip.get("end", 0)) - float(clip.get("start", 0))
     if clip.get("hook") and hook_seconds > 0:
-        ev.append(f"Dialogue: 1,{_ass_time(0)},{_ass_time(min(hook_seconds, dur))},Hook,,0,0,0,,{_ass_escape(clip['hook'])}")
+        ev.append(f"Dialogue: 1,{_ass_time(0)},{_ass_time(min(hook_seconds, dur))},Hook,,0,0,0,,"
+                  f"{{\\an8\\pos({w // 2},{top_y})}}{_ass_escape(clip['hook'])}")
     for a, b, t in clip.get("lines") or []:
         if b > a and t.strip():
-            ev.append(f"Dialogue: 0,{_ass_time(a)},{_ass_time(min(b + 0.15, dur))},Cap,,0,0,0,,{_wrap(_ass_escape(t))}")
+            for ca, cb, piece in _chunks(float(a), min(float(b), dur), _ass_escape(t)):
+                ev.append(f"Dialogue: 0,{_ass_time(ca)},{_ass_time(cb)},Cap,,0,0,0,,"
+                          f"{{\\an2\\pos({w // 2},{bottom_y})}}{piece}")
     return head + "\n".join(ev) + "\n"
 
 
@@ -173,12 +184,13 @@ def run_cutter(store=None, password: Optional[str] = None) -> list[str]:
     idx_path = folder / "downloaded.json"
     done = json.loads(idx_path.read_text()) if idx_path.exists() else {}
     min_score = float(cfg.get("laptop.min_score_to_download", 55))
+    auto = bool(cfg.get("laptop.auto_download", False))
     in_batch = {cid for b in app.get("batches", []) for cid in b.get("clips", [])}
     from .util import hours_since
     manual = lambda c: c.get("manual") and hours_since(c.get("found")) < 6  # noqa: E731
     todo = [c for c in app.get("clips", []) if c["id"] not in done and status.get(c["id"], {}).get("status") != "skipped"
-            and (c["score"] >= min_score or c["id"] in in_batch or manual(c)
-                 or status.get(c["id"], {}).get("status") == "approved")]
+            and ((auto and (c["score"] >= min_score or c["id"] in in_batch or manual(c)))
+                 or status.get(c["id"], {}).get("status") in ("approved", "download"))]
     todo.sort(key=lambda c: (not manual(c), status.get(c["id"], {}).get("status") != "approved",
                              c["id"] not in in_batch, -c["rank"]))
     made = []

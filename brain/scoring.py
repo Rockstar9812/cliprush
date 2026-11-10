@@ -265,21 +265,31 @@ def _line_signal(text: str, people: PeopleIndex) -> bool:
 
 
 def _snap(m: Moment, segs: list[dict], hard_max: float, lo: float, people: PeopleIndex) -> Moment:
-    """Tighten the clip: include the set-up question just before it, drop dead lines at the end."""
-    for s in segs:
-        if m.start - 7 <= s["start"] < m.start and QUESTION_START.search(norm(s["text"])):
-            if m.end - s["start"] <= hard_max:
-                m.start = s["start"]
-            break
+    """Shape the clip: start ON the hook (set-up question or first hot line), never on filler,
+    then extend forward to the target length and drop dead lines at the end."""
     inside = [s for s in segs if s["start"] >= m.start - 0.05 and s["start"] < m.end]
-    while len(inside) > 1 and (inside[-2]["start"] + inside[-2]["dur"] - m.start) >= lo \
-            and not _line_signal(inside[-1]["text"], people):
-        inside.pop()
+    while len(inside) > 1 and not _line_signal(inside[0]["text"], people):
+        inside.pop(0)
     if inside:
+        first = inside[0]
+        for s in segs:  # include the question that sets the moment up, if it is just before
+            if first["start"] - 7 <= s["start"] < first["start"] and QUESTION_START.search(norm(s["text"])):
+                inside.insert(0, s)
+                break
+        st = inside[0]["start"]
+        idx = segs.index(inside[-1])
+        while inside[-1]["start"] + inside[-1]["dur"] - st < lo and idx + 1 < len(segs) \
+                and segs[idx + 1]["start"] + segs[idx + 1]["dur"] - st <= hard_max:
+            idx += 1
+            inside.append(segs[idx])
+        while len(inside) > 1 and (inside[-2]["start"] + inside[-2]["dur"] - st) >= lo \
+                and not _line_signal(inside[-1]["text"], people):
+            inside.pop()
+        m.start = st
         m.end = inside[-1]["start"] + inside[-1]["dur"]
         m.text = " ".join(s["text"] for s in inside if s["text"])
     m.start = max(0.0, m.start - 0.4)
-    m.end = m.end + 0.6
+    m.end = min(m.end + 0.6, m.start + hard_max)  # never longer than the maximum
     return m
 
 

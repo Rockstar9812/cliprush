@@ -62,7 +62,6 @@ class Cycle:
         self.feedback = load_feedback(self.store)
         self.ai = AI(self.http, self.cfg, b["ai_usage"])
         self.mirrors = Mirrors(self.http, b["mirrors"])
-        b["last_manual"] = None
         if video:
             self.add_manual(video)
 
@@ -102,22 +101,68 @@ class Cycle:
 
     # ---------------------------------------------------------------- manual
     def add_manual(self, url: str) -> None:
+        """A pasted link: one video, or a channel (its newest full episodes)."""
         import re as _re
+        url = url.strip()
+        self.brain["last_manual"] = {"input": url, "at": iso(now_utc()), "videos": []}
+        chan = _re.search(r"youtube\.com/(?:(@[\w.\-]+)|channel/(UC[\w-]{22})|c/([\w.\-]+)|user/([\w.\-]+))", url)
+        if chan or url.startswith("@"):
+            self.add_channel(url, chan)
+            return
         m = _re.search(r"(?:v=|youtu\.be/|/shorts/|/live/|/embed/)([\w-]{11})", url) or _re.fullmatch(r"\s*([\w-]{11})\s*", url)
         if not m:
-            self.note(f"Manual: could not read a YouTube video id from '{url[:60]}'")
+            self.note(f"Manual: could not read a YouTube video or channel from '{url[:60]}'")
             return
-        vid = m.group(1)
+        self._manual_video(m.group(1))
+        self.note(f"Manual request: clipping https://youtu.be/{m.group(1)}")
+
+    def _manual_video(self, vid: str, show: str = "Manual", source: str = "manual") -> None:
         e = self.brain["episodes"].get(vid)
         if e and e.get("stage") == "done":
             e["_rescore"] = ["manual"]
-        e = e or {"id": vid, "title": "(manual)", "show": "Manual", "cat": "manual", "podcast_tier": 2, "guest": None,
+        e = e or {"id": vid, "title": "(manual)", "show": show, "cat": "manual", "podcast_tier": 2, "guest": None,
                   "guest_tier": 9, "published": "", "views": 0, "found": iso(now_utc())}
-        e.update({"stage": "new" if e.get("stage") != "done" else "done", "source": "manual", "manual": True,
+        e.update({"stage": "new" if e.get("stage") != "done" else "done", "source": source, "manual": True,
                   "updated": iso(now_utc()), "tries": 0})
         self.brain["episodes"][vid] = e
-        self.brain["last_manual"] = {"video": vid, "at": iso(now_utc())}
-        self.note(f"Manual request: clipping https://youtu.be/{vid}")
+        self.brain["last_manual"]["videos"].append(vid)
+        self.brain["last_manual"]["video"] = vid
+
+    def add_channel(self, url: str, m) -> None:
+        n = int(self.cfg.get("manual.channel_videos", 3))
+        min_s = 60 * float(self.cfg.get("discovery.min_episode_minutes", 12))
+        cid, title = (m.group(2) if m else None), ""
+        handle = (m.group(1) or m.group(3) or m.group(4) or "") if m else url
+        if not cid:
+            try:
+                res = yt.resolve_channel(self.http, handle.lstrip("@"), handle.lstrip("@"), None, self.mirrors, trust=True)
+            except (yt.Blocked, yt.Unreachable):
+                res = None
+            if not res:
+                self.note(f"Manual: could not find the channel {handle}")
+                return
+            cid, title = res["channel_id"], res.get("title", "")
+        items = []
+        try:
+            items = [e for e in yt.fetch_rss(self.http, cid) if not e.get("is_short")]
+        except yt.Blocked:
+            items = []
+        if not items:
+            items = self.mirrors.channel_videos(cid)
+        picked = 0
+        for e in items:
+            if picked >= n:
+                break
+            if e.get("duration") and e["duration"] < min_s:
+                continue
+            show = e.get("channel_title") or title or handle
+            self._manual_video(e["video_id"], show=show, source="manual-channel")
+            ep = self.brain["episodes"][e["video_id"]]
+            ep.update({k: v for k, v in {"title": e.get("title"), "published": e.get("published"),
+                                         "views": e.get("views")}.items() if v})
+            picked += 1
+        self.brain["last_manual"]["channel"] = cid
+        self.note(f"Manual request: newest {picked} episode(s) of {title or handle}")
 
     # ------------------------------------------------------------- discovery
     def resolve_channels(self) -> None:
@@ -199,7 +244,7 @@ class Cycle:
                     continue
                 if r.get("duration") and r["duration"] < min_s:
                     continue
-                if person.name not in [x.name for x in self.people.find(r["title"], allow_last_name=True)]:
+                if person.name not in [x.name for x in self.people.find(r["title"], allow_last_name=False)]:
                     continue
                 if r.get("timestamp") and hours_since(iso(datetime.fromtimestamp(r["timestamp"], UTC))) > 48:
                     continue
@@ -357,7 +402,9 @@ class Cycle:
             after = " ".join(s["text"] for s in segs if m.end <= s["start"] < m.end + 12)
             speaker = who
             lines = [[round(max(0.0, s["start"] - m.start), 2), round(min(m.end, s["start"] + s["dur"]) - m.start, 2),
-                      s["text"]] for s in segs if s["start"] + s["dur"] > m.start and s["start"] < m.end]
+                      re.sub(r"\s+", " ", re.sub(r"\[[^\]]*\]|\([^)]*laugh[^)]*\)", "", s["text"], flags=re.I)).strip()]
+                     for s in segs if s["start"] + s["dur"] > m.start and s["start"] < m.end]
+            lines = [ln for ln in lines if ln[2]]
             cands.append({"id": cid, "who": speaker, "text": m.text, "before": before, "after": after, "m": m,
                           "lines": lines})
         verdicts = self.ai.judge({"show": e["show"], "title": e["title"], "guest": who},
@@ -407,10 +454,10 @@ class Cycle:
         if not self.cfg.x_accounts:
             return False
         xs = self.brain["xstudy"]
-        if self.mode != "cloud" and "blocked" in str((xs.get("health") or {}).get("sources", {})) \
-                and hours_since(xs.get("laptop_run")) >= 1:
-            xs["laptop_run"] = iso(now_utc())
-            return True
+        srcs = (xs.get("health") or {}).get("sources", {})
+        nothing_worked = bool(srcs) and not any(str(v).startswith("ok") for k, v in srcs.items() if k != "fxtwitter")
+        if (nothing_worked or not xs.get("posts")) and hours_since(xs.get("last_run")) >= 0.33:
+            return True  # last attempt collected nothing - try again soon instead of waiting 3 hours
         return hours_since(xs.get("last_run")) >= float(self.cfg.get("x_study.every_hours", 3))
 
     # ---------------------------------------------------------------- publish

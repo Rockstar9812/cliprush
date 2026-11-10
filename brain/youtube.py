@@ -58,7 +58,7 @@ def similarity(a: str, b: str) -> float:
 
 # ---------------------------------------------------------------- channels
 def resolve_channel(http: Http, name: str, handle: str = "", titles: Optional[list] = None,
-                    mirrors=None) -> Optional[dict]:
+                    mirrors=None, trust: bool = False) -> Optional[dict]:
     """Return {channel_id, title, method} or None. Verifies the title matches `name` (or `titles`)."""
     names = [name] + list(titles or [])
 
@@ -72,7 +72,7 @@ def resolve_channel(http: Http, name: str, handle: str = "", titles: Optional[li
                                  r'channel_id=(UC[\w-]{22})', r'"channelId":"(UC[\w-]{22})"'])
             title = _find(r.text, [r'<meta property="og:title" content="([^"]+)"',
                                    r'"title":"([^"]+)","description"']) or ""
-            if cid and (match(title, 0.5) or similarity(handle, title) >= 0.6):
+            if cid and (trust or match(title, 0.5) or similarity(handle, title) >= 0.6):
                 return {"channel_id": cid, "title": _unescape(title), "method": "handle"}
             if cid:
                 log.info("Handle @%s resolved to '%s' which does not match '%s' - searching", handle, title, name)

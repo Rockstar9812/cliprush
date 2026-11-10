@@ -39,13 +39,15 @@ def test_run_study_collects_and_rechecks():
     cfg.x_accounts = ["fearedbuck", "blockedacct"]
     cfg.x_search_terms = []
     routes = {
+        "/2/profile/": fakes.FakeResp(503, "down"),  # FxTwitter timeline down -> X embed fallback
         "screen-name/fearedbuck": fakes.FakeResp(200, fakes.syndication_html("fearedbuck", 5, hours_ago=30)),
         "screen-name/blockedacct": fakes.FakeResp(403, "no"),
-        "api.fxtwitter.com": lambda url: fakes.FakeResp(200, js=fakes.fx_json(url.rsplit("/", 1)[1], 1_200_000)),
+        "api.fxtwitter.com": lambda url: fakes.FakeResp(200, js=fakes.fx_json(url.rstrip("/").rsplit("/", 1)[1], 1_200_000)),
     }
     xs = {}
     h = xstudy.run_study(fakes.FakeHttp(routes), cfg, xs, PEOPLE, cfg.podcasts)
-    assert h["new"] == 5 and h["sources"]["blockedacct"] == "blocked" and h["rechecked"] == 5
+    assert h["new"] == 5 and h["sources"]["blockedacct"] == "unavailable right now" and h["rechecked"] == 5
+    assert "syndication" in h["sources"]["fearedbuck"]
     p = next(iter(xs["posts"].values()))
     assert p["views"] == 1_200_000 and set(p["checked"]) == {1.0, 6.0, 24.0}
     assert "Katt Williams" in p["people"] and p["podcast"] == "Club Shay Shay"
@@ -336,3 +338,59 @@ def test_no_captions_yet_is_retried_not_sent_to_laptop(tmp_path, monkeypatch):
     c.run(("watch",))
     brain = decrypt_obj((tmp_path / BRAIN_FILE).read_bytes(), "test-password-123")
     assert brain["episodes"]["vid00000001"]["stage"] == "no_transcript"
+
+
+def test_fx_timeline_is_primary_x_source():
+    """FxTwitter's public timeline works from the cloud: video posts kept, reposts and text-only skipped."""
+    cfg = Config()
+    cfg.x_accounts = ["fearedbuck"]
+    cfg.x_search_terms = []
+    ts = int((datetime.now(UTC) - timedelta(hours=30)).timestamp())
+
+    def st(i, video=True, repost=False):
+        d = {"type": "status", "id": f"19{i:017d}", "text": f"Katt Williams calls out Kevin Hart {i}", "created_timestamp": ts,
+             "likes": 1000, "reposts": 50, "replies": 20, "views": 900_000 + i, "author": {"screen_name": "fearedbuck"},
+             "media": {"videos": [{"duration": 44.0}]} if video else {}}
+        if repost:
+            d["reposted_by"] = {"screen_name": "fearedbuck"}
+        return d
+    timeline = {"code": 200, "results": [st(1), st(2), st(3, video=False), st(4, repost=True)], "cursor": {"top": None, "bottom": "x"}}
+    routes = {"/2/profile/fearedbuck/statuses": fakes.FakeResp(200, js=timeline),
+              "api.fxtwitter.com": lambda url: fakes.FakeResp(200, js=fakes.fx_json(url.rstrip("/").rsplit("/", 1)[1], 1_500_000))}
+    xs = {}
+    h = xstudy.run_study(fakes.FakeHttp(routes), cfg, xs, PEOPLE, cfg.podcasts)
+    assert h["new"] == 2 and "fx-timeline" in h["sources"]["fearedbuck"]
+    p = xs["posts"]["19" + "1".zfill(17)]
+    assert p["duration"] == 44.0 and p["views"] >= 900_001 and p["people"][:2] == ["Katt Williams", "Kevin Hart"]
+
+
+def test_channel_link_analyses_newest_episodes(tmp_path, monkeypatch):
+    from brain import alt, pipeline, youtube as yt
+    from brain.store import APP_FILE, LocalStore
+    calls = {}
+
+    def resolve(http, name, handle="", titles=None, mirrors=None, trust=False):
+        calls["trust"] = trust
+        return {"channel_id": "UCnojumperxxxxxxxxxxxxx", "title": "No Jumper", "method": "handle"}
+    feed = []
+    for i, v in enumerate(["chanvid0001", "chanvid0002", "chanvid0003", "chanvid0004"]):
+        feed += [x for x in yt.parse_rss(fakes.rss(channel_id="UCnojumperxxxxxxxxxxxxx", title="No Jumper", vid=v,
+                                                   hours_ago=24 * (i + 3), ep_title=f"Katt Williams Part {i} | No Jumper"))
+                 if x["video_id"] == v]
+    monkeypatch.setattr(yt, "resolve_channel", resolve)
+    monkeypatch.setattr(yt, "fetch_rss", lambda http, cid: feed if cid == "UCnojumperxxxxxxxxxxxxx" else [])
+    monkeypatch.setattr(yt, "search", lambda *a, **k: [])
+    monkeypatch.setattr(yt, "video_info", lambda vid, with_comments=True: dict(fakes.info(vid, hours_ago=24 * 5),
+                                                                            channel="No Jumper"))
+    monkeypatch.setattr(yt, "transcript", lambda http, vid, info=None: (fakes.transcript(), "test"))
+    monkeypatch.setattr(alt.Mirrors, "search_videos", lambda self, q, n=6: [])
+    monkeypatch.delenv("GROQ_API_KEY", raising=False)
+    c = pipeline.Cycle(mode="cloud", store=LocalStore(str(tmp_path)), password="test-password-123")
+    c.cfg.x_accounts = []
+    c.cfg.podcasts = []
+    h = c.run(("watch",), video="https://www.youtube.com/@NoJumper/videos")
+    app = decrypt_obj((tmp_path / APP_FILE).read_bytes(), "test-password-123")
+    assert calls["trust"] is True
+    assert h["last_manual"]["videos"] == ["chanvid0001", "chanvid0002", "chanvid0003"]
+    assert {cl["video_id"] for cl in app["clips"]} == {"chanvid0001", "chanvid0002", "chanvid0003"}
+    assert all(cl["show"] == "No Jumper" for cl in app["clips"])

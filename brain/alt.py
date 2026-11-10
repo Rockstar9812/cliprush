@@ -102,6 +102,22 @@ class Mirrors:
                             "views": v.get("viewCount") or 0, "timestamp": v.get("published")})
         return out[:n]
 
+    def channel_videos(self, cid: str, n: int = 10) -> list[dict]:
+        for base in self.invidious()[:3]:
+            r = self.http.get(f"{base}/api/v1/channels/{cid}/videos", tries=1, timeout=12)
+            if r is not None and r.status_code == 200:
+                try:
+                    j = r.json()
+                    vids = j.get("videos", j) if isinstance(j, dict) else j
+                    self._ok(base)
+                    return [{"video_id": v["videoId"], "title": v.get("title", ""), "duration": v.get("lengthSeconds") or 0,
+                             "views": v.get("viewCount") or 0, "channel_title": v.get("author", "")}
+                            for v in vids if isinstance(v, dict) and v.get("videoId")][:n]
+                except (ValueError, KeyError, AttributeError):
+                    pass
+            self._fail(base)
+        return []
+
     def search_channels(self, name: str) -> list[dict]:
         return [{"channel_id": c["authorId"], "title": c.get("author", "")}
                 for c in self._inv_search({"q": name, "type": "channel"}, tries=2)

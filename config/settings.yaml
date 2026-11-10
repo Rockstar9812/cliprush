@@ -19,9 +19,9 @@ discovery:
   people_per_search_round: 12   # rotates through the watchlist
 
 clips:
-  target_seconds: [8, 22]       # your data: sub-15s clips perform best; allows a little context
-  hard_max_seconds: 35
-  min_gap_seconds: 75           # picked moments must be this far apart in an episode
+  target_seconds: [20, 55]      # 20s minimum; grows up to 55s when the moment keeps going
+  hard_max_seconds: 55
+  min_gap_seconds: 120          # picked moments must be this far apart in an episode
   per_episode: 5
   min_score: 45                 # 0-100; below this a moment is not shown
 
@@ -40,12 +40,16 @@ x_study:
   keep_days: 120
   apify:
     enabled_if_token: true
-    actor: "xquik/x-tweet-scraper"   # any Apify X scraper; fields are mapped defensively
+    actor: "feedminer/x-tweet-scraper"   # no-login X scraper, input {twitterHandles, maxItems}
     monthly_usd_cap: 4.50            # stays under Apify's $5 free monthly credit
-    usd_per_1000: 0.15
+    usd_per_1000: 0.12
     search_terms_per_round: 3
 
+manual:
+  channel_videos: 3             # pasting a channel link analyses its newest N full episodes
+
 laptop:
+  auto_download: false          # phone-first: the laptop only cuts clips you tap Download/Approve on
   clips_folder: "C:/Users/Sandeep/ClipRush"
   min_score_to_download: 55
   max_downloads_per_run: 12

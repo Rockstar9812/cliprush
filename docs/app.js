@@ -107,6 +107,16 @@ function setStatus(id, status, extra = {}) {
   if (token()) pushFeedback();
 }
 
+const PAGES_BASE = () => { const r = repo(); const [o, n] = r.split("/"); return o && n ? `https://${o.toLowerCase()}.github.io/${n}` : location.origin; };
+const PHONE_CMDS_FN = () => [
+  "pip install -U yt-dlp",
+  `curl -L -o cliprush_phone.py ${PAGES_BASE()}/phone/cliprush_phone.py`,
+  "mkdir -p ClipRush/fonts",
+  `curl -L -o ClipRush/fonts/DejaVuSans-Bold.ttf ${PAGES_BASE()}/phone/DejaVuSans-Bold.ttf`,
+  "python3 cliprush_phone.py dQw4w9WgXcQ 60 80",
+];
+let PHONE_CMDS = [];
+
 // ------------------------------------------------------------------ helpers
 const clipById = (id) => (DATA?.clips || []).find((c) => c.id === id);
 const statusOf = (c) => FB.clips[c.id]?.status || c.status || "";
@@ -151,7 +161,7 @@ function clipCard(c, n) {
       <div class="actions">
         <button class="btn" data-act="preview">Preview</button>
         <button class="btn" data-act="copy">Copy</button>
-        <button class="btn ${st === "approved" ? "good" : "primary"}" data-act="approve">${st === "approved" ? "Approved" : "Approve"}</button>
+        <button class="btn ${st === "downloaded" ? "good" : "primary"}" data-act="download">${st === "downloaded" ? "✓ Again" : "⬇ Download"}</button>
         <button class="btn" data-act="more">More</button>
       </div>
     </div>
@@ -177,13 +187,14 @@ function viewBatches() {
 function viewClips() {
   const cats = ["all", ...new Set((DATA.clips || []).map((c) => c.cat).filter(Boolean))];
   let clips = (DATA.clips || []).slice();
-  if (FILTER.startsWith("vid:")) clips = clips.filter((c) => c.video_id === FILTER.slice(4));
-  else if (FILTER === "approved" || FILTER === "posted") clips = clips.filter((c) => statusOf(c) === FILTER);
+  if (FILTER.startsWith("vid:")) { const ids = FILTER.slice(4).split(","); clips = clips.filter((c) => ids.includes(c.video_id)); }
+  else if (FILTER === "approved") clips = clips.filter((c) => ["approved", "download", "downloaded"].includes(statusOf(c)));
+  else if (FILTER === "posted") clips = clips.filter((c) => statusOf(c) === "posted");
   else if (FILTER !== "all") clips = clips.filter((c) => c.cat === FILTER);
   clips = clips.filter((c) => FILTER === "posted" || statusOf(c) !== "skipped");
   const fbtn = (k, label) => `<button class="btn ${FILTER === k ? "on" : ""}" data-filter="${k}">${esc(label)}</button>`;
-  const vidBtn = FILTER.startsWith("vid:") ? fbtn(FILTER, "This video") : "";
-  return `<div class="filters">${vidBtn}${cats.map((k) => fbtn(k, k === "all" ? "All" : CAT[k] || k)).join("")}${fbtn("approved", "Approved")}${fbtn("posted", "Posted")}</div>
+  const vidBtn = FILTER.startsWith("vid:") ? fbtn(FILTER, FILTER.includes(",") ? "This channel" : "This video") : "";
+  return `<div class="filters">${vidBtn}${cats.map((k) => fbtn(k, k === "all" ? "All" : CAT[k] || k)).join("")}${fbtn("approved", "Downloaded")}${fbtn("posted", "Posted")}</div>
     <div class="section-title"><h2>${clips.length} clips</h2><span class="muted small">sorted by score + episode heat</span></div>
     ${clips.length ? `<div class="grid">${clips.map((c) => clipCard(c)).join("")}</div>` : `<div class="empty">No clips here yet.</div>`}`;
 }
@@ -212,6 +223,7 @@ function viewInsights() {
 }
 
 function viewHealth() {
+  PHONE_CMDS = PHONE_CMDS_FN();
   const h = DATA.health || {};
   const xs = h.x_study || {};
   const ai = h.ai || {};
@@ -233,9 +245,24 @@ function viewHealth() {
     ${missing.length ? `<div class="panel"><h3>Channels to fix</h3>${missing.map((s) => `<p style="margin:4px 0">• ${esc(s.name)}</p>`).join("")}</div>` : ""}
     <div class="panel"><h3>X sources</h3><div class="kv">${Object.entries(xs.sources || {}).map(([k, v]) => `<div class="k">${esc(k)}</div><div>${esc(v)}</div>`).join("") || "<div class='muted'>not run yet</div>"}</div></div>
     <div class="panel"><h3>Activity</h3><div class="log">${esc((h.events || []).slice().reverse().join("\n")) || "No events yet."}</div></div>
+    <div class="panel"><h3>Phone downloads - one-time setup (5 min)</h3>
+      <p class="small">1. Install <b>a-Shell mini</b> (free, App Store). iPhone Settings → App Store → turn <b>Offload Unused Apps</b> off.</p>
+      <p class="small">2. Open a-Shell mini and paste these, one at a time:</p>
+      ${PHONE_CMDS.map((c) => `<div class="row" style="margin:6px 0"><code class="grow small" style="word-break:break-all">${esc(c)}</code>
+        <button class="btn" data-act="copy-cmd" data-cmd="${esc(c)}">Copy</button></div>`).join("")}
+      <p class="small">3. Shortcuts app → <b>+</b> → name it <b>ClipRush Cut</b> → add these actions:</p>
+      <ol class="small" style="margin:4px 0 8px 18px;padding:0">
+        <li><b>Execute Command</b> (a-Shell mini): <code>python3 cliprush_phone.py</code> then a space and the <b>Shortcut Input</b> variable</li>
+        <li><b>Get File</b> (a-Shell mini): <code>ClipRush/latest.mp4</code></li>
+        <li><b>Save to Photo Album</b> (Recents)</li>
+        <li><b>Show Notification</b>: "Clip saved to Photos"</li></ol>
+      <p class="small">In the shortcut's ⓘ settings turn on <b>Receive input: Text</b>. Done - every ⬇ Download now saves the clip to Photos.</p>
+      <p class="small muted">If the shortcut stops without saving: in the Execute Command action tap "Show More" and switch it to run inside the a-Shell app (long clips need the full app's memory).</p>
+      <p class="small muted">If a download fails, open a-Shell mini - the reason is printed there. You can also paste the copied command into a-Shell and then share the file from Files → a-Shell mini → ClipRush.</p>
+    </div>
     <div class="panel"><h3>Settings (this device)</h3>
       <label class="small muted">Repository</label><input id="setRepo" value="${esc(repo())}" placeholder="yourname/cliprush" />
-      <label class="small muted">GitHub token - needed for the Find clips button (permissions: Contents + Actions = Read and write). Also syncs Approve/Posted.</label><input id="setToken" type="password" value="${esc(token())}" placeholder="github_pat_..." />
+      <label class="small muted">GitHub token - needed for the Find clips button (permissions: Contents + Actions = Read and write). Also syncs Downloaded/Posted.</label><input id="setToken" type="password" value="${esc(token())}" placeholder="github_pat_..." />
       <label class="small muted">iPhone Shortcut name</label><input id="setShortcut" value="${esc(LS.get("cr_shortcut", "ClipRush Cut"))}" />
       <div class="actions" style="grid-template-columns:1fr 1fr"><button class="btn primary" data-act="save-settings">Save</button><button class="btn" data-act="lock">Lock & forget password</button></div>
     </div>`;
@@ -260,8 +287,9 @@ const vidOf = (u) => (u.match(/(?:v=|youtu\.be\/|\/shorts\/|\/live\/|\/embed\/)(
 function findModal() {
   $("#modalBody").innerHTML = `<h3>Find clips now</h3>
     <p class="muted small" style="margin:0 4px 10px">Starts the cloud brain immediately (instead of waiting for GitHub's schedule).
-      Paste a YouTube link to clip that exact video, or leave it empty to check every podcast. Usually ready in 2-4 minutes.</p>
-    <input id="findUrl" class="field" inputmode="url" placeholder="https://youtu.be/... (optional)" />
+      Paste a <b>video</b> link to clip it, or a <b>channel</b> link (youtube.com/@name) to clip its newest 3 episodes.
+      Leave empty to check every podcast. Usually ready in 2-5 minutes.</p>
+    <input id="findUrl" class="field" inputmode="url" placeholder="https://youtu.be/... or https://youtube.com/@channel" />
     ${token() ? "" : `<input id="findToken" class="field" type="password" placeholder="GitHub token (one time - see Health > Settings)" />`}
     <button class="btn primary wide" data-act="find-go">Find clips now</button>
     <p class="muted small" style="margin:10px 4px 0">Laptop: double-click "ClipRush - Find clips now" on your Desktop - it also downloads the cut MP4s.</p>`;
@@ -299,30 +327,32 @@ async function startFind() {
   const tok = ($("#findToken")?.value || "").trim();
   if (tok) LS.set("cr_token", tok);
   if (!token()) return toast("Add your GitHub token first");
-  const vid = url ? vidOf(url) : "";
-  if (url && !vid) return toast("That doesn't look like a YouTube link");
+  const isChan = /youtube\.com\/(@|channel\/|c\/|user\/)/i.test(url) || /^@[\w.\-]+$/.test(url);
+  const vid = url && !isChan ? vidOf(url) : "";
+  if (url && !vid && !isChan) return toast("That doesn't look like a YouTube video or channel link");
   closeModal();
   try { await dispatchRun(url); } catch (e) { banner(esc(e.message), "fail"); setTimeout(() => $("#runBanner").classList.add("hidden"), 12000); return; }
-  RUN = { t0: Date.now(), since: DATA?.generated || "", vid };
+  RUN = { t0: Date.now(), since: DATA?.generated || "", vid, input: url, chan: isChan };
   pollRun();
 }
 
 async function pollRun() {
   if (!RUN) return;
   const sec = Math.round((Date.now() - RUN.t0) / 1000);
-  banner(`<span class="spin"></span><span>${RUN.vid ? "Clipping your link" : "Checking every podcast"} in the cloud... ${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, "0")} - usually 2-4 min. You can keep using the app.</span>`);
+  banner(`<span class="spin"></span><span>${RUN.chan ? "Clipping the channel's newest episodes" : RUN.vid ? "Clipping your link" : "Checking every podcast"} in the cloud... ${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, "0")} - usually 2-4 min. You can keep using the app.</span>`);
   if (sec > 25) {
     try { await load(PASSWORD, { quiet: true }); } catch { /* keep polling */ }
     const lm = DATA?.health?.last_manual;
-    const fresh = DATA && DATA.generated > RUN.since && (!RUN.vid || (lm && lm.video === RUN.vid));
+    const fresh = DATA && DATA.generated > RUN.since && (!RUN.input || (lm && lm.input === RUN.input));
     if (fresh) {
-      const n = RUN.vid ? DATA.clips.filter((c) => c.video_id === RUN.vid).length : 0;
-      const vid = RUN.vid;
+      const vids = RUN.input ? (lm.videos || []) : [];
+      const n = DATA.clips.filter((c) => vids.includes(c.video_id)).length;
+      const vid = vids.length ? vids.join(",") : "";
       RUN = null;
       if (vid) { TAB = "clips"; FILTER = `vid:${vid}`; }
       render();
       const blocked = DATA.health?.youtube_blocked;
-      banner(vid ? (n ? `Done - ${n} clip${n > 1 ? "s" : ""} from your link.` : blocked
+      banner(vid ? (n ? `Done - ${n} clip${n > 1 ? "s" : ""} from your link. Tap ⬇ Download on the ones you want.` : blocked
         ? "YouTube and the mirrors refused the cloud for this video. Run 'Find clips now' on your laptop to finish it."
         : "Done - no strong moments found in that video.") : "Done - all podcasts checked.", n || !vid ? "done" : "fail");
       setTimeout(() => $("#runBanner").classList.add("hidden"), 10000);
@@ -344,8 +374,47 @@ function preview(c) {
     <div class="actions"><button class="btn" data-act="replay" data-id="${c.id}">Replay</button>
       <a class="btn" style="text-align:center;text-decoration:none" href="${esc(c.url)}" target="_blank" rel="noopener">YouTube</a>
       <button class="btn" data-act="copy" data-id="${c.id}">Copy</button>
-      <button class="btn primary" data-act="approve" data-id="${c.id}">Approve</button></div>`;
+      <button class="btn primary" data-act="download" data-id="${c.id}">⬇ Download</button></div>`;
   $("#modal").classList.remove("hidden");
+}
+
+// ------------------------------------------------------------------ download on this phone
+const TRIM = LS.get("cr_trim", {});
+function bounds(c) {
+  const t = TRIM[c.id] || { ds: 0, de: 0 };
+  const s = Math.max(0, c.start + t.ds);
+  const e = Math.max(s + 5, c.end + t.de);
+  return { s, e, ds: t.ds, de: t.de };
+}
+function clipCode(c) {
+  const { s, e } = bounds(c);
+  const shift = s - c.start;
+  const lines = (c.lines || []).map(([a, b, t]) => [+(a - shift).toFixed(2), +(b - shift).toFixed(2), t])
+    .filter(([a, b]) => b > 0 && a < e - s).map(([a, b, t]) => [Math.max(0, a), Math.min(e - s, b), t]);
+  const obj = { v: c.video_id, s: +s.toFixed(2), e: +e.toFixed(2), h: c.hook || "", l: lines };
+  const b64 = btoa(unescape(encodeURIComponent(JSON.stringify(obj)))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  return `clip ${b64}`;
+}
+window.__clipCode = (id) => clipCode(clipById(id));
+function download(c) {
+  const code = clipCode(c);
+  setStatus(c.id, "downloaded");
+  if (isIOS) {
+    navigator.clipboard?.writeText(capOf(c)).catch(() => {});
+    const sc = LS.get("cr_shortcut", "ClipRush Cut");
+    location.href = `shortcuts://run-shortcut?name=${encodeURIComponent(sc)}&input=text&text=${encodeURIComponent(code)}`;
+    toast("Caption copied · your phone is cutting the clip (about 30-60 s)");
+  } else {
+    navigator.clipboard?.writeText(`python3 cliprush_phone.py ${code}`).catch(() => {});
+    toast("Laptop: command copied. Your laptop cuts it on its next run too.");
+    setStatus(c.id, "download");
+  }
+}
+function trim(c, which, delta) {
+  const t = TRIM[c.id] || { ds: 0, de: 0 };
+  t[which] += delta;
+  TRIM[c.id] = t; LS.set("cr_trim", TRIM);
+  more(c);
 }
 
 function approve(c) {
@@ -372,9 +441,16 @@ function more(c) {
     <div class="kv" style="margin:10px 4px">
       <div class="k">Score</div><div>${c.score} (rules ${c.rule_score}${c.ai ? `, AI viral ${c.ai.viral}/10, stands alone ${c.ai.standalone}/10` : ""})</div>
       <div class="k">Episode heat</div><div>${c.hot}</div><div class="k">Hook (on video)</div><div>${esc(c.hook)}</div>
-      <div class="k">Moment</div><div>${esc(c.at)} · ${Math.round(c.duration)}s</div></div>
+      <div class="k">Moment</div><div>${esc(c.at)} · ${Math.round(bounds(c).e - bounds(c).s)}s${bounds(c).ds || bounds(c).de ? " (trimmed)" : ""}</div></div>
+    <p class="small muted" style="margin:6px 4px">Adjust before downloading:</p>
+    <div class="actions" style="grid-template-columns:repeat(4,1fr);margin-bottom:8px">
+      <button class="btn" data-act="trim" data-w="ds" data-d="-5" data-id="${c.id}">Start −5s</button>
+      <button class="btn" data-act="trim" data-w="ds" data-d="5" data-id="${c.id}">Start +5s</button>
+      <button class="btn" data-act="trim" data-w="de" data-d="-5" data-id="${c.id}">End −5s</button>
+      <button class="btn" data-act="trim" data-w="de" data-d="5" data-id="${c.id}">End +5s</button></div>
     <div class="chips" style="margin:0 4px 12px">${(c.reasons || []).map((r) => `<span class="chip">${esc(r)}</span>`).join("")}</div>
-    <div class="actions" style="grid-template-columns:repeat(3,1fr)">
+    <div class="actions" style="grid-template-columns:repeat(2,1fr)">
+      <button class="btn primary" data-act="download" data-id="${c.id}">⬇ Download</button>
       <button class="btn good" data-act="posted" data-id="${c.id}">Mark posted</button>
       <button class="btn" data-act="skip" data-id="${c.id}">Skip</button>
       <button class="btn" data-act="reset" data-id="${c.id}">Reset</button></div>`;
@@ -394,6 +470,9 @@ document.addEventListener("click", async (ev) => {
   else if (act === "replay" && c) preview(c);
   else if (act === "copy" && c) copyCaption(c);
   else if (act === "approve" && c) approve(c);
+  else if (act === "download" && c) { closeModal(); download(c); }
+  else if (act === "trim" && c) trim(c, t.dataset.w, Number(t.dataset.d));
+  else if (act === "copy-cmd") { navigator.clipboard?.writeText(t.dataset.cmd).then(() => toast("Copied")).catch(() => toast("Long-press to copy")); }
   else if (act === "more" && c) more(c);
   else if (act === "posted" && c) {
     const link = prompt("Paste your X post link (optional - lets ClipRush learn from your own results):", "") || "";

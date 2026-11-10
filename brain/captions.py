@@ -110,4 +110,4 @@ def template_caption(who: Optional[str], hits: dict, people: list[str], text: st
 def hook_text(caption: str) -> str:
     """Short on-video hook (first 3 seconds): the first 5 words, upper-case."""
     words = re.sub(r'["“”]', "", caption).split()
-    return " ".join(words[:5]).upper()
+    return " ".join(words[:5]).upper().rstrip(":,;-–— ")
